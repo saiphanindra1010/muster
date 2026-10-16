@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
-import { activateBotSkills, createBotFromPrompt, listBots, listDisabledBots, listMcp, resolveBotSkills, upgradeBotPersonas } from "./lib/bots";
+import { activateBotSkills, chatHasBuiltinSkill, createBotFromPrompt, listBots, listDisabledBots, listMcp, resolveBotSkills, upgradeBotPersonas } from "./lib/bots";
 import {
   IconActivity, IconArrowUp, IconBot, IconCheck, IconChevronDown, IconCopy,
   IconGear, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
@@ -320,7 +320,21 @@ export function App() {
 
   /** Open a bot chat, creating its session on first contact. */
   const openBot = async (botID: string) => {
-    const existing = sessions.find((s) => s.kind === "dm" && s.bot === botID);
+    let existing = sessions.find((s) => s.kind === "dm" && s.bot === botID);
+    if (existing && (await chatHasBuiltinSkill(existing.id))) {
+      // Chats from before builtin-skill filtering carry a huge OpenCode
+      // docs marker that is read-only history and overrides the bot's
+      // persona. It can't be cleaned in place — archive the chat (kept in
+      // the DB as dm-archived) and give the bot a fresh one.
+      try {
+        await (client as any).session.update({
+          sessionID: existing.id,
+          metadata: { kind: "dm-archived", bot: botID },
+        } as any);
+      } catch {}
+      existing = undefined;
+      refreshSessions();
+    }
     if (existing) {
       setActiveSession(existing.id, botID);
       markSeen(existing.id);
