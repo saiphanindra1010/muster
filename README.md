@@ -198,6 +198,7 @@ Bots behave like background colleagues, not request/response toys:
 | Stop | `session.interrupt` |
 | Permission prompt | `permission.list` + Allow / Always / Deny (`permission.reply`) |
 | Bot files | `file.read` / `file.write` / `file.list` under `<workspace>/.opencode/agents/`, applied via `location.reload` |
+| Bot avatars | DiceBear **Bottts** robots (style by Pablo Stanley — free for personal and commercial use) on pastel backdrops, seeded by bot id, generated locally as isolated data-URI SVGs — no network, no keys |
 | Rename bot | `session.update` (title + metadata) so the DM chat follows the new name |
 | Team roster dots | `permission.list` per session (boot) + global events: `permission.asked/replied`, `session.execution.*`, `session.idle` |
 | Skills / MCP catalogs | `skill.list`, `mcp.list`; skills auto-activated with `session.skill` |

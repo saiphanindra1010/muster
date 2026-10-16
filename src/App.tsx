@@ -638,8 +638,8 @@ export function App() {
     stream.push(
       <div key={m.key} className={`slack-msg ${compact ? "compact" : ""}`}>
         {!compact ? (
-          <div className="avatar" style={s.col ? { borderColor: s.col } : undefined}>
-            {s.user ? <IconUser size={20} /> : <BotAvatar seed={s.name} color={s.col} size={30} />}
+          <div className="avatar">
+            {s.user ? <IconUser size={22} /> : <BotAvatar seed={s.name} color={s.col} size={32} />}
           </div>
         ) : (
           <div className="avatar-ghost">{fmtTime(m.time)}</div>
@@ -721,7 +721,7 @@ export function App() {
                     title={[b.description ?? b.id, stText].filter(Boolean).join(" — ")}
                   >
                     <span className="avatar small">
-                      <BotAvatar seed={b.id} color={b.color} size={22} />
+                      <BotAvatar seed={b.id} color={b.color} size={24} />
                     </span>
                     <span className="nm">{b.id}</span>
                     {st && <span className={`status-dot ${st}`} title={stText} />}
@@ -751,7 +751,7 @@ export function App() {
                       title={`${b.description ?? b.id} — disabled. Open settings to re-enable.`}
                     >
                       <span className="avatar small">
-                        <BotAvatar seed={b.id} color={b.color} size={22} />
+                        <BotAvatar seed={b.id} color={b.color} size={24} />
                       </span>
                       <span className="nm">{b.id}</span>
                     </button>
@@ -806,7 +806,7 @@ export function App() {
                 <div className="bot-grid">
                   {bots.map((b) => (
                     <button key={b.id} className="bot-card-btn" onClick={() => openBot(b.id)}>
-                      <BotAvatar seed={b.id} color={b.color} size={34} />
+                      <BotAvatar seed={b.id} color={b.color} size={36} />
                       <span style={{ minWidth: 0 }}><b>{b.id}</b><span>{b.description || "No description yet"}</span></span>
                     </button>
                   ))}
@@ -832,7 +832,7 @@ export function App() {
           <>
             <div className="topbar">
               <span className="avatar small">
-                <BotAvatar seed={activeBot ?? "?"} color={meta?.color} size={22} />
+                <BotAvatar seed={activeBot ?? "?"} color={meta?.color} size={24} />
               </span>
               <div className="who">
                 <button className="name-btn" title="Rename / edit this bot" onClick={() => setSettingsBot(activeBot)}>
@@ -881,8 +881,8 @@ export function App() {
                 <div className="thread" ref={threadRef}>{stream}
                   {liveEntries.map(([k, text]) => (
                     <div key={k} className="slack-msg">
-                      <div className="avatar" style={liveSender.col ? { borderColor: liveSender.col } : undefined}>
-                        {liveSender.user ? <IconUser size={20} /> : <BotAvatar seed={liveSender.name} color={liveSender.col} size={30} />}
+                      <div className="avatar" >
+                        {liveSender.user ? <IconUser size={22} /> : <BotAvatar seed={liveSender.name} color={liveSender.col} size={32} />}
                       </div>
                       <div className="slack-body">
                         <div className="slack-head">

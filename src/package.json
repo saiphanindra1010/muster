@@ -8,6 +8,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.3",
     "@opencode/client": "latest",
     "@tauri-apps/api": "^2.12.3",
     "lucide-react": "^1.56.0",
