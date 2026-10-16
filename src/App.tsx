@@ -218,16 +218,38 @@ export function App() {
     } catch {}
   };
 
-  // One-time: fill in the colleague persona for bots created before it existed.
+  // Boot task: fill in the colleague persona for bots created before it
+  // existed. Retries while the harness is still discovering agents (the first
+  // list right after boot can be empty), then latches.
   const personasUpgraded = useRef(false);
   useEffect(() => {
     if (!harnessOk || personasUpgraded.current) return;
-    personasUpgraded.current = true;
-    upgradeBotPersonas()
-      .then((n) => {
-        if (n) refreshCatalogs();
-      })
-      .catch((e) => console.warn("persona upgrade failed:", e));
+    let cancelled = false;
+    let tries = 0;
+    const attempt = async () => {
+      if (cancelled || personasUpgraded.current) return;
+      tries++;
+      try {
+        const { checked, changed } = await upgradeBotPersonas();
+        if (cancelled) return;
+        if (changed) refreshCatalogs();
+        if (checked > 0 || tries >= 8) {
+          personasUpgraded.current = true;
+          return;
+        }
+      } catch (e) {
+        if (tries >= 8) {
+          personasUpgraded.current = true;
+          console.warn("persona upgrade failed:", e);
+          return;
+        }
+      }
+      setTimeout(attempt, 2500);
+    };
+    attempt();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harnessOk]);
 

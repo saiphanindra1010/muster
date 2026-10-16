@@ -467,13 +467,15 @@ export async function createBotFromPrompt(text: string): Promise<string> {
 }
 
 /**
- * One-time upgrade: give existing bots the colleague persona. Only bodies
- * that are empty or still use the legacy "You are <name>." template are
- * touched — custom prompts are never overwritten. Returns how many changed.
+ * Boot migration: give existing bots the colleague persona. Only bodies that
+ * are empty or still use the legacy "You are <name>." template are touched —
+ * custom prompts are never overwritten. Returns how many bots were checked
+ * and how many changed; callers retry while `checked` is 0 (agent discovery
+ * is async, so the first list right after boot can still be empty).
  */
-export async function upgradeBotPersonas(): Promise<number> {
+export async function upgradeBotPersonas(): Promise<{ checked: number; changed: number }> {
   const ws = await ensureLocation();
-  if (!ws) return 0;
+  if (!ws) return { checked: 0, changed: 0 };
   let bots: any[] = [];
   try {
     bots = await listBots();
@@ -481,9 +483,11 @@ export async function upgradeBotPersonas(): Promise<number> {
   try {
     bots = bots.concat(await listDisabledBots());
   } catch {}
+  let checked = 0;
   let changed = 0;
   for (const b of bots) {
     if (!b?.id) continue;
+    checked++;
     try {
       const src = await readBotFile(b.id);
       if (src == null) continue;
@@ -516,8 +520,11 @@ export async function upgradeBotPersonas(): Promise<number> {
       console.warn(`persona upgrade failed for ${b.id}:`, (e as Error).message);
     }
   }
-  if (changed) await client.location.reload();
-  return changed;
+  // Reload even when nothing changed here: this also runs right after boot or
+  // external file edits, and a fresh location guarantees the harness serves
+  // the latest prompts.
+  if (checked > 0) await client.location.reload();
+  return { checked, changed };
 }
 
 /** Re-point this bot's DM session(s) at a new name after a rename (best-effort). */
