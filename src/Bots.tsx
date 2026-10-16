@@ -6,8 +6,10 @@ import {
   normServer,
   parseBotFile,
   readBotFile,
+  renameBotHistory,
   saveBot,
   setBotDisabled,
+  slugify,
   type BotDraft,
   type PermRule,
 } from "./lib/bots";
@@ -18,12 +20,13 @@ import { workspaceDir } from "./lib/opencode";
  * Bot settings drawer: edit one bot (system prompt, skills, MCP, advanced).
  * Rendered as a right-side overlay from the sidebar gear icon.
  */
-export function BotSettings({ botId, models, onClose, onChanged, onDeleted }: {
+export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRenamed }: {
   botId: string;
   models: string[];
   onClose: () => void;
   onChanged: () => void;
   onDeleted: (botId: string) => void;
+  onRenamed?: (from: string, to: string) => void;
 }) {
   const [draft, setDraft] = useState<BotDraft | null>(null);
   const [unknown, setUnknown] = useState<string[]>([]);
@@ -62,9 +65,22 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted }: {
 
   const save = async () => {
     if (!draft) return;
+    const target = slugify(draft.name);
+    if (!target) {
+      setStatus("Give it a name — a plain word like “coach” works.");
+      return;
+    }
+    if (target !== botId && (await readBotFile(target)) != null) {
+      setStatus(`A bot called “${target}” already exists — pick another name.`);
+      return;
+    }
     try {
       setStatus("Saving…");
-      await saveBot(draft, unknown, rules);
+      await saveBot(draft, unknown, rules, botId);
+      if (target !== botId) {
+        await renameBotHistory(botId, target);
+        onRenamed?.(botId, target);
+      }
       setStatus("");
       onChanged();
       onClose();
@@ -117,6 +133,12 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted }: {
           {status && <div className="hint">{status}</div>}
           {draft && (
             <>
+              <label>Name
+                <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="coach" />
+              </label>
+              {draft.name !== botId && (
+                <div className="hint">Renaming keeps this bot's chat history. The name can also stay as-is — it was picked for you.</div>
+              )}
               <label>What this bot is for
                 <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Reviews my code" />
               </label>

@@ -118,8 +118,12 @@ share them:
 
 ## 6. Bots (custom agents with skills + MCP)
 
-Sidebar ＋ (or the hero button) opens the builder: name + what it should do,
-one click to create and start chatting. A bot is stored as
+Sidebar ＋ (or the field on the home screen) — just say what the bot should
+do, one click to create and start chatting. No name form: the name is derived
+from your words ("help me plan trips" → `plan-trips`) and stored; click the
+bot's name in the chat header (or edit it in settings) to rename it later —
+its chat history follows the rename. An empty prompt creates a general-purpose
+`helper`. A bot is stored as
 `<workspace>/.opencode/agents/<name>.md` (frontmatter + system prompt body):
 
 - **Skills**: checkbox list from the harness skill catalog. Default = all skills
@@ -139,7 +143,25 @@ Bots can also **manage skills themselves**: the workspace ships
 teaches any bot to create/update skill files when asked ("remember this",
 "update the X skill").
 
-## 7. Reliability notes (verified live against v2.0.28)
+## 7. The team view
+
+Bots behave like background colleagues, not request/response toys:
+
+- Each bot's turn runs on the harness independently — switch chats, keep
+  talking to someone else, the work continues. Closing the chat doesn't stop it.
+- **Roster dots** in the sidebar: green pulse = working on a task, amber =
+  waiting for your approval, violet = replied while you were away (opening the
+  chat clears it). All driven by the global event stream, so it's live even for
+  chats you're not looking at.
+- Messages sent mid-turn are queued by the harness inbox, so you can pile work
+  on without waiting.
+- Pending approvals are seeded at boot (`permission.list` per session) and kept
+  live from `permission.asked` / `permission.replied` events — a bot stuck on a
+  permission prompt is visible from the roster.
+- Sessions that were mid-turn when the UI went away are re-marked "working" at
+  boot (`time.updated > time.idle` heuristic) and re-verified by the stream.
+
+## 8. Reliability notes (verified live against v2.0.28)
 
 - **Prompts sent while a bot is mid-turn are queued, not swallowed** (the
   harness enqueues them in the session inbox). The UI composer keeps working
@@ -153,7 +175,7 @@ teaches any bot to create/update skill files when asked ("remember this",
 - Reasoning parts (`session.reasoning.*`) are intentionally hidden — the UI
   renders final text + tool activity only.
 
-## 8. Scripts
+## 9. Scripts
 
 | cmd | what |
 |---|---|
@@ -164,7 +186,7 @@ teaches any bot to create/update skill files when asked ("remember this",
 | `bun run tauri:dev` | desktop window in dev mode |
 | `bun run tauri:build` | .deb bundle (needs cargo + system webkit deps) |
 
-## 9. UI ↔ harness mapping
+## 10. UI ↔ harness mapping
 
 | UI element | Harness call |
 |---|---|
@@ -176,6 +198,8 @@ teaches any bot to create/update skill files when asked ("remember this",
 | Stop | `session.interrupt` |
 | Permission prompt | `permission.list` + Allow / Always / Deny (`permission.reply`) |
 | Bot files | `file.read` / `file.write` / `file.list` under `<workspace>/.opencode/agents/`, applied via `location.reload` |
+| Rename bot | `session.update` (title + metadata) so the DM chat follows the new name |
+| Team roster dots | `permission.list` per session (boot) + global events: `permission.asked/replied`, `session.execution.*`, `session.idle` |
 | Skills / MCP catalogs | `skill.list`, `mcp.list`; skills auto-activated with `session.skill` |
 
 Keep UI dumb: all agent/tool reasoning stays in OpenCode.

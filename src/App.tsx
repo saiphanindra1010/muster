@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
-import { activateBotSkills, listBots, listDisabledBots, listMcp, resolveBotSkills, saveBot, slugify } from "./lib/bots";
+import { activateBotSkills, createBotFromPrompt, listBots, listDisabledBots, listMcp, resolveBotSkills } from "./lib/bots";
 import {
   IconActivity, IconArrowUp, IconBot, IconCheck, IconChevronDown, IconCopy,
   IconGear, IconPlus, IconStop, IconThumbsDown, IconThumbsUp,
@@ -104,7 +104,12 @@ export function App() {
   const [harnessOk, setHarnessOk] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [live, setLive] = useState<Record<string, string>>({});
-  const [modal, setModal] = useState<{ name: string; task: string; busy: boolean; err: string } | null>(null);
+  // Team status per session: who needs your approval, who has new replies.
+  const [needsYou, setNeedsYou] = useState<Record<string, boolean>>({});
+  const [unread, setUnread] = useState<Record<string, boolean>>({});
+  const [modal, setModal] = useState<{ text: string; err: string } | null>(null);
+  const [newBotText, setNewBotText] = useState("");
+  const [creating, setCreating] = useState(false);
   const [settingsBot, setSettingsBot] = useState<string | null>(null);
   const statusTimer = useRef<any>(null);
   const watchdogs = useRef<Record<string, any>>({});
@@ -132,6 +137,24 @@ export function App() {
     busyRef.current = m;
     setBusySessions(m);
   };
+
+  const syncNeedsYou = (sid: string, on: boolean) =>
+    setNeedsYou((m) => {
+      if (!!m[sid] === on) return m;
+      const n = { ...m };
+      if (on) n[sid] = true;
+      else delete n[sid];
+      return n;
+    });
+
+  /** A chat you just opened is "seen" — clears its roster dot. */
+  const markSeen = (sid: string) =>
+    setUnread((m) => {
+      if (!m[sid]) return m;
+      const n = { ...m };
+      delete n[sid];
+      return n;
+    });
 
   const clearWatchdog = (sid: string) => {
     clearTimeout(watchdogs.current[sid]);
@@ -229,8 +252,12 @@ export function App() {
   const loadPerms = async (id: string) => {
     try {
       const r: any = await (client as any).permission.list({ sessionID: id });
-      setPerms(r?.data ?? r ?? []);
-    } catch { setPerms([]); }
+      const list: any[] = r?.data ?? r ?? [];
+      if (id === activeIDRef.current) setPerms(list);
+      syncNeedsYou(id, list.length > 0);
+    } catch {
+      if (id === activeIDRef.current) setPerms([]);
+    }
   };
 
   const replyPerm = async (requestID: string, decision: "once" | "always" | "reject") => {
@@ -259,6 +286,7 @@ export function App() {
     const existing = sessions.find((s) => s.kind === "dm" && s.bot === botID);
     if (existing) {
       setActiveSession(existing.id, botID);
+      markSeen(existing.id);
       setMsgs([]);
       setPerms([]);
       setLive({});
@@ -288,42 +316,26 @@ export function App() {
     }
   };
 
-  const quickCreate = async () => {
-    if (!modal || modal.busy) return;
-    const name = slugify(modal.name);
-    const task = modal.task.trim();
-    if (!name) {
-      setModal({ ...modal, err: "Give the bot a name first." });
-      return;
-    }
-    if (!task) {
-      setModal({ ...modal, err: "Describe what the bot should do first." });
-      return;
-    }
-    setModal({ ...modal, busy: true, err: "" });
+  /**
+   * One-thought bot creation: whatever the user typed becomes the bot. Name is
+   * derived from the text (or "helper" for an empty prompt) and stored — the
+   * user can click the name in settings to change it later.
+   */
+  const createBot = async (raw: string) => {
+    if (creating) return;
+    setCreating(true);
     try {
-      // Clean file: empty skills/tools means "everything" (resolved at chat
-      // time), so future skills and tools apply without re-editing the bot.
-      const slug = await saveBot(
-        {
-          name,
-          description: task.length > 120 ? task.slice(0, 120) + "..." : task,
-          mode: "primary",
-          model: "",
-          color: "",
-          system: `You are ${name}.\n\n${task}`,
-          disabled: false,
-          skills: [],
-          mcp: {},
-        },
-        [],
-        [],
-      );
+      const slug = await createBotFromPrompt(raw);
       setModal(null);
+      setNewBotText("");
       refreshCatalogs();
       await openBot(slug);
     } catch (e) {
-      setModal({ ...modal, busy: false, err: `Create failed: ${(e as Error).message}` });
+      const msg = `Create failed: ${(e as Error).message}`;
+      setModal((m) => (m ? { ...m, err: msg } : m));
+      if (!modal) say(msg);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -424,7 +436,7 @@ export function App() {
       const t: string = e.type ?? "";
       const d: any = e.data ?? {};
       const sid: string = d.sessionID ?? "";
-      if (sid && ACTIVITY_EVENTS.has(t) && sid === activeIDRef.current) armWatchdog(sid);
+      if (sid && ACTIVITY_EVENTS.has(t)) armWatchdog(sid);
       switch (t) {
         case "session.execution.started":
           if (sid) {
@@ -442,6 +454,9 @@ export function App() {
             if (sid === activeIDRef.current) {
               loadThread(sid);
               loadPerms(sid);
+            } else {
+              // Finished while you were elsewhere — show a roster dot.
+              setUnread((m) => (m[sid] ? m : { ...m, [sid]: true }));
             }
           }
           refreshSessions();
@@ -458,7 +473,9 @@ export function App() {
           break;
         case "permission.asked":
         case "permission.replied":
-          if (sid === activeIDRef.current) loadPerms(sid);
+          // Keep the whole team's "needs you" state accurate, not just the
+          // chat on screen — that's what makes it feel like colleagues.
+          if (sid) loadPerms(sid);
           break;
         case "session.created":
         case "session.deleted":
@@ -510,12 +527,32 @@ export function App() {
       }
     };
 
+    /** Boot: surface pre-existing "waiting on you" states across the team. */
+    const seedStatuses = async () => {
+      try {
+        const r: any = await client.session.list();
+        const list: any[] = r?.data ?? [];
+        for (const s of list) {
+          if (s?.metadata?.kind !== "dm") continue;
+          loadPerms(s.id);
+          // Mid-turn heuristic: activity after the last idle marker means the
+          // bot was working when the UI last went away.
+          const t = s.time ?? {};
+          if (t.updated && t.idle && t.updated > t.idle) {
+            setSessionBusy(s.id, true);
+            armWatchdog(s.id);
+          }
+        }
+      } catch {}
+    };
+
     (async () => {
       // Desktop boot: Rust owns the harness URL + per-boot password. Browsers
       // skip this (invoke rejects) and use the env vars run.sh exported.
       await resolveTauriHarness();
       refreshSessions();
       refreshCatalogs();
+      seedStatuses();
       connect();
     })();
 
@@ -636,7 +673,7 @@ export function App() {
         rows={1}
         value={input}
         onChange={(e) => { setInput(e.target.value); autogrow(); }}
-        placeholder={activeBot ? `Message ${activeBot}…` : "Pick a bot first"}
+        placeholder={activeBot ? `Give ${activeBot} a task…` : "Pick a bot first"}
         disabled={!activeBot}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
       />
@@ -660,34 +697,46 @@ export function App() {
           <b>openchat</b>
           <span className="status"><span className={`pulse ${harnessOk ? "" : "down"}`} />{harnessOk ? "online" : "offline"}</span>
         </div>
-        <button className="newbot-btn" onClick={() => setModal({ name: "", task: "", busy: false, err: "" })}>
+        <button className="newbot-btn" onClick={() => setModal({ text: "", err: "" })}>
           <IconPlus size={15} /> New bot
         </button>
         <nav>
-          <div className="sec-label">Bots</div>
+          <div className="sec-label">Your team</div>
           <ul>
-            {bots.map((b) => (
-              <li key={b.id}>
-                <button
-                  className={`bot-row ${activeBot === b.id ? "active" : ""}`}
-                  onClick={() => openBot(b.id)}
-                  title={b.description ?? b.id}
-                >
-                  <span className="avatar small">
-                    <BotAvatar seed={b.id} color={b.color} size={22} />
-                  </span>
-                  <span className="nm">{b.id}</span>
-                  <span
-                    className="gear" role="button" title={`${b.id} settings`}
-                    onClick={(e) => { e.stopPropagation(); setSettingsBot(b.id); }}
+            {bots.map((b) => {
+              // Roster status: who's mid-task, who needs your OK, who replied.
+              const sid = sessions.find((s) => s.kind === "dm" && s.bot === b.id)?.id;
+              const st = sid
+                ? busySessions[sid] ? "working" : needsYou[sid] ? "needs-you" : unread[sid] ? "done" : ""
+                : "";
+              const stText =
+                st === "working" ? "working on a task" :
+                st === "needs-you" ? "needs your approval" :
+                st === "done" ? "new reply while you were away" : "";
+              return (
+                <li key={b.id}>
+                  <button
+                    className={`bot-row ${activeBot === b.id ? "active" : ""} ${st === "needs-you" ? "needs" : ""}`}
+                    onClick={() => openBot(b.id)}
+                    title={[b.description ?? b.id, stText].filter(Boolean).join(" — ")}
                   >
-                    <IconGear size={14} />
-                  </span>
-                </button>
-              </li>
-            ))}
+                    <span className="avatar small">
+                      <BotAvatar seed={b.id} color={b.color} size={22} />
+                    </span>
+                    <span className="nm">{b.id}</span>
+                    {st && <span className={`status-dot ${st}`} title={stText} />}
+                    <span
+                      className="gear" role="button" title={`${b.id} settings`}
+                      onClick={(e) => { e.stopPropagation(); setSettingsBot(b.id); }}
+                    >
+                      <IconGear size={14} />
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
             {bots.length === 0 && (
-              <li><button className="bot-row" onClick={() => setModal({ name: "", task: "", busy: false, err: "" })}>Make your first bot</button></li>
+              <li><button className="bot-row" onClick={() => setModal({ text: "", err: "" })}>Make your first bot</button></li>
             )}
           </ul>
           {disabledBots.length > 0 && (
@@ -750,8 +799,8 @@ export function App() {
               <h1>Talk to your bots</h1>
               <div className="lede">
                 {bots.length === 0
-                  ? "Make your first bot below — name it, say what it should do, start chatting."
-                  : "Pick a bot to start chatting. Every bot has its own skills and tools."}
+                  ? "Describe a bot below — it gets a name automatically and opens in chat."
+                  : "Pick a bot and give it a task — they keep working while you're elsewhere."}
               </div>
               {bots.length > 0 && (
                 <div className="bot-grid">
@@ -763,9 +812,20 @@ export function App() {
                   ))}
                 </div>
               )}
-              <button className="btn-primary" onClick={() => setModal({ name: "", task: "", busy: false, err: "" })}>
-                <IconPlus size={15} /> New bot
-              </button>
+              <div className="create-row">
+                <input
+                  value={newBotText}
+                  onChange={(e) => setNewBotText(e.target.value)}
+                  placeholder={bots.length === 0 ? "e.g. help me plan trips" : "Describe a new bot…"}
+                  autoFocus={bots.length === 0}
+                  disabled={creating}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createBot(newBotText); } }}
+                />
+                <button className="btn-primary" onClick={() => createBot(newBotText)} disabled={creating}>
+                  <IconPlus size={15} /> {creating ? "Creating…" : "Create"}
+                </button>
+              </div>
+              <div className="hint" style={{ marginTop: 6 }}>The name is picked for you — rename anytime by clicking it in the chat header.</div>
             </div>
           </div>
         ) : (
@@ -775,7 +835,9 @@ export function App() {
                 <BotAvatar seed={activeBot ?? "?"} color={meta?.color} size={22} />
               </span>
               <div className="who">
-                <strong>{activeBot}</strong>
+                <button className="name-btn" title="Rename / edit this bot" onClick={() => setSettingsBot(activeBot)}>
+                  <strong>{activeBot}</strong>
+                </button>
                 {meta?.description && <span className="dim">{meta.description}</span>}
               </div>
               <span className="spacer" />
@@ -850,21 +912,26 @@ export function App() {
       </div>
 
       {modal && (
-        <div className="modal-veil" onClick={() => !modal.busy && setModal(null)}>
+        <div className="modal-veil" onClick={() => !creating && setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>New bot</h3>
-            <p>Name it and describe what it should do. It opens in chat right away — tune skills and tools later from its settings.</p>
-            <label>Bot name
-              <input autoFocus value={modal.name} onChange={(e) => setModal({ ...modal, name: e.target.value })} placeholder="e.g. coach" />
-            </label>
+            <p>Say what it should do — the name is picked for you and can be changed later.</p>
             <label>What should it do?
-              <textarea rows={3} value={modal.task} onChange={(e) => setModal({ ...modal, task: e.target.value })} placeholder="e.g. Review my code and explain things simply" />
+              <textarea
+                autoFocus
+                rows={3}
+                value={modal.text}
+                onChange={(e) => setModal({ ...modal, text: e.target.value })}
+                placeholder="e.g. Review my code and explain things simply"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createBot(modal.text); } }}
+              />
             </label>
+            <div className="hint">Leave it empty for a general-purpose helper.</div>
             {modal.err && <div className="err">{modal.err}</div>}
             <div className="row">
-              <button className="btn-ghost" onClick={() => setModal(null)} disabled={modal.busy}>Cancel</button>
-              <button className="btn-primary" onClick={quickCreate} disabled={modal.busy}>
-                {modal.busy ? "Creating…" : "Create + chat"}
+              <button className="btn-ghost" onClick={() => setModal(null)} disabled={creating}>Cancel</button>
+              <button className="btn-primary" onClick={() => createBot(modal.text)} disabled={creating}>
+                {creating ? "Creating…" : "Create + chat"}
               </button>
             </div>
           </div>
@@ -885,6 +952,10 @@ export function App() {
                 setPerms([]);
                 setLive({});
               }
+            }}
+            onRenamed={(from, to) => {
+              if (activeBot === from) setActiveBot(to);
+              refreshSessions();
             }}
           />
         </ErrorBoundary>

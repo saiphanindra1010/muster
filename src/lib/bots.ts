@@ -213,6 +213,20 @@ export async function listBots(): Promise<any[]> {
   return bots;
 }
 
+/** Delete only the bot file (no reload/polling) — internal for rename. */
+async function removeBotFile(slug: string): Promise<void> {
+  const ws = workspaceDir();
+  if (!ws) throw new Error("Workspace not connected — is the harness running?");
+  if (!slug || slug.includes("..")) throw new Error("Invalid bot name.");
+  const abs = `${ws.replace(/\/$/, "")}/${BOTS_REL_DIR}/${slug}.md`;
+  if (!abs.startsWith(ws.replace(/\/$/, "") + "/")) throw new Error("Refusing to delete outside the bots dir.");
+  const quoted = `'${abs.replace(/'/g, `'\\''`)}'`;
+  await (client as any).shell.create({
+    location: { directory: ws },
+    command: `rm -f ${quoted}`,
+  });
+}
+
 export async function readBotFile(name: string): Promise<string | null> {
   const ws = workspaceDir();
   if (!ws) return null;
@@ -263,11 +277,16 @@ export async function listDisabledBots(): Promise<Array<{ id: string; descriptio
   return out;
 }
 
-/** Create or overwrite a bot, reload, and wait until harness discovery picks it up. */
+/**
+ * Create or overwrite a bot, reload, and wait until harness discovery picks
+ * it up. Pass `prevName` when editing an existing bot so a changed name
+ * becomes a rename (old file removed) instead of a leftover duplicate.
+ */
 export async function saveBot(
   d: BotDraft,
   unknownLines: string[] = [],
   extraRules: PermRule[] = [],
+  prevName?: string,
 ): Promise<string> {
   const ws = workspaceDir();
   if (!ws) throw new Error("Workspace not connected — is the harness running?");
@@ -279,10 +298,19 @@ export async function saveBot(
     path: `${BOTS_REL_DIR}/${slug}.md`,
     payload: enc.encode(serializeBotFile({ ...d, name: slug }, unknownLines, extraRules)),
   });
+  const prev = prevName ? slugify(prevName) : "";
+  if (prev && prev !== slug) await removeBotFile(prev);
   await client.location.reload();
   // Project agent discovery runs async after load — poll until visible.
+  // Disabled bots never appear in /api/agent; for them the write itself
+  // (readable with disabled:true) is the success condition.
   for (let i = 0; i < 15; i++) {
     await new Promise((r) => setTimeout(r, 1000));
+    if (d.disabled) {
+      const src = await readBotFile(slug);
+      if (src != null && parseBotFile(src).known.disabled === true) return slug;
+      continue;
+    }
     try {
       const all = await scopedAgents(ws);
       if (all.some((a) => a.id === slug || a.id.endsWith(`/${slug}`))) return slug;
@@ -297,14 +325,7 @@ export async function deleteBot(name: string): Promise<void> {
   if (!ws) throw new Error("Workspace not connected — is the harness running?");
   const slug = slugify(name);
   if (!slug || slug.includes("..")) throw new Error("Invalid bot name.");
-  const abs = `${ws.replace(/\/$/, "")}/${BOTS_REL_DIR}/${slug}.md`;
-  if (!abs.startsWith(ws.replace(/\/$/, "") + "/")) throw new Error("Refusing to delete outside the bots dir.");
-  const quoted = `'${abs.replace(/'/g, `'\\''`)}'`;
-  // NOTE: command is a flat string on the wire (not the nested object in .d.ts).
-  await (client as any).shell.create({
-    location: { directory: ws },
-    command: `rm -f ${quoted}`,
-  });
+  await removeBotFile(slug);
   await client.location.reload();
   // Poll until the file is actually gone.
   for (let i = 0; i < 10; i++) {
@@ -332,6 +353,99 @@ export async function setBotDisabled(name: string, disabled: boolean): Promise<v
     unknownLines,
     known.rules ?? [],
   );
+}
+
+/**
+ * Words that carry no naming value — "help me plan trips" should become
+ * `plan-trips`, not `help-plan-trips`.
+ */
+const NAME_STOPWORDS = new Set([
+  "a", "an", "and", "the", "my", "me", "i", "you", "your", "it", "its",
+  "that", "this", "for", "of", "to", "in", "on", "with", "at", "by", "from",
+  "should", "shall", "make", "makes", "create", "creates", "build", "builds",
+  "help", "helps", "want", "wants", "need", "needs", "can", "could", "will",
+  "would", "do", "does", "please", "bot", "assistant", "always", "when",
+  "then", "also", "about", "answer", "answers", "answering", "question",
+  "questions", "things", "stuff", "just", "only", "some", "new", "really", "very",
+]);
+
+/**
+ * Pick a short readable bot name from what the user typed. No forms, no
+ * questions — the name is derived, stored, and editable later in settings.
+ */
+export function deriveBotName(text: string, taken: Set<string>): string {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/[\s-]+/)
+    .filter(Boolean);
+  const picked: string[] = [];
+  for (const w of words) {
+    if (NAME_STOPWORDS.has(w)) continue;
+    picked.push(w);
+    if (picked.length >= 2) break;
+  }
+  let base = picked.join("-").replace(/-+$/g, "").slice(0, 28).replace(/-+$/g, "");
+  if (!base) base = "helper";
+  if (/^\d/.test(base)) base = `bot-${base}`;
+  let name = base;
+  for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+  return name;
+}
+
+/**
+ * One-thought bot creation: pass whatever the user typed ("review my code",
+ * "help me plan trips", or nothing at all) and get a saved, discoverable bot.
+ * Empty text creates a general-purpose helper.
+ */
+export async function createBotFromPrompt(text: string): Promise<string> {
+  const raw = text.trim();
+  const taken = new Set<string>([...BUILTIN_AGENT_IDS, "compaction", "title", "summary"]);
+  try {
+    for (const b of await listBots()) taken.add(b.id);
+  } catch {}
+  try {
+    for (const b of await listDisabledBots()) taken.add(b.id);
+  } catch {}
+  const name = deriveBotName(raw, taken);
+  const description = raw.length > 120 ? raw.slice(0, 117) + "..." : raw;
+  const system = raw
+    ? `You are ${name}.\n\n${raw}`
+    : `You are ${name}, a friendly, capable assistant.`;
+  return saveBot(
+    {
+      name,
+      description,
+      mode: "primary",
+      model: "",
+      color: "",
+      system,
+      disabled: false,
+      skills: [],
+      mcp: {},
+    },
+    [],
+    [],
+  );
+}
+
+/** Re-point this bot's DM session(s) at a new name after a rename (best-effort). */
+export async function renameBotHistory(from: string, to: string): Promise<void> {
+  try {
+    const r: any = await client.session.list();
+    const list: any[] = r?.data ?? [];
+    for (const s of list) {
+      if (s?.metadata?.kind === "dm" && s?.metadata?.bot === from) {
+        await client.session.update({
+          sessionID: s.id,
+          title: to,
+          metadata: { ...(s.metadata ?? {}), kind: "dm", bot: to },
+        } as any);
+      }
+    }
+  } catch (e) {
+    console.warn("chat re-point after rename failed:", (e as Error).message);
+  }
 }
 
 /** Skills a bot chats with: explicit file list, else every catalog skill (default). */
