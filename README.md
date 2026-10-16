@@ -30,6 +30,9 @@ openchat_bot/
 - Rust **only** for the desktop app. The toolchain is pinned to 1.98 in
   `src-tauri/rust-toolchain.toml` — rustc 1.99.0 has a reproducible ICE on
   `hashbrown` (`mir_for_ctfe`). Re-evaluate when 1.99.x ships a fix.
+- Heads-up: rustc 1.98.x occasionally SIGSEGVs inside LLVM on this machine
+  (random crates/passes, `error: rustc interrupted by SIGSEGV`) — it is flaky,
+  not a code problem. Just rerun `bun run tauri:build`; it goes through.
 
 ## 2. Run (browser, one command)
 
