@@ -1,0 +1,5 @@
+# Pin the working toolchain: rustc 1.99.0 ICEs on hashbrown (mir_for_ctfe),
+# 1.98.1 builds clean. Re-evaluate when 1.99.x ships a fix.
+[toolchain]
+channel = "1.98"
+profile = "minimal"

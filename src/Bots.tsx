@@ -1,0 +1,226 @@
+import { useEffect, useState } from "react";
+import {
+  deleteBot,
+  listMcp,
+  listSkills,
+  normServer,
+  parseBotFile,
+  readBotFile,
+  saveBot,
+  setBotDisabled,
+  type BotDraft,
+  type PermRule,
+} from "./lib/bots";
+import { IconBan, IconSave, IconTrash, IconX } from "./icons";
+import { workspaceDir } from "./lib/opencode";
+
+/**
+ * Bot settings drawer: edit one bot (system prompt, skills, MCP, advanced).
+ * Rendered as a right-side overlay from the sidebar gear icon.
+ */
+export function BotSettings({ botId, models, onClose, onChanged, onDeleted }: {
+  botId: string;
+  models: string[];
+  onClose: () => void;
+  onChanged: () => void;
+  onDeleted: (botId: string) => void;
+}) {
+  const [draft, setDraft] = useState<BotDraft | null>(null);
+  const [unknown, setUnknown] = useState<string[]>([]);
+  const [rules, setRules] = useState<PermRule[]>([]);
+  const [allSkills, setAllSkills] = useState<any[]>([]);
+  const [allMcp, setAllMcp] = useState<any[]>([]);
+  const [status, setStatus] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const ws = workspaceDir();
+
+  useEffect(() => {
+    (async () => {
+      setAllSkills(await listSkills());
+      setAllMcp(await listMcp());
+      const src = await readBotFile(botId);
+      if (src == null) {
+        setStatus(`Could not read bot file for ${botId}.`);
+        return;
+      }
+      const { known, unknownLines, system } = parseBotFile(src);
+      setDraft({
+        name: botId,
+        description: known.description ?? "",
+        mode: known.mode ?? "primary",
+        model: known.model ?? "",
+        color: known.color ?? "",
+        system,
+        disabled: known.disabled ?? false,
+        skills: known.skills ?? [],
+        mcp: known.mcp ?? {},
+      });
+      setUnknown(unknownLines);
+      setRules(known.rules ?? []);
+    })();
+  }, [botId]);
+
+  const save = async () => {
+    if (!draft) return;
+    try {
+      setStatus("Saving…");
+      await saveBot(draft, unknown, rules);
+      setStatus("");
+      onChanged();
+      onClose();
+    } catch (e) {
+      setStatus(`Save failed: ${(e as Error).message}`);
+    }
+  };
+
+  const toggleDisabled = async () => {
+    if (!draft) return;
+    try {
+      setStatus(draft.disabled ? "Enabling…" : "Disabling…");
+      await setBotDisabled(botId, !draft.disabled);
+      onChanged();
+      onClose();
+    } catch (e) {
+      setStatus(`Failed: ${(e as Error).message}`);
+    }
+  };
+
+  const remove = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      setStatus("Click Delete again to permanently remove this bot.");
+      return;
+    }
+    try {
+      setStatus("Deleting…");
+      await deleteBot(botId);
+      onChanged();
+      onDeleted(botId);
+      onClose();
+    } catch (e) {
+      setConfirmDelete(false);
+      setStatus(`Delete failed: ${(e as Error).message}`);
+    }
+  };
+
+  if (!ws) return null;
+
+  return (
+    <>
+      <div className="drawer-veil" onClick={onClose} />
+      <div className="drawer">
+        <div className="drawer-head">
+          <b>{botId} settings</b>
+          <button className="icon-btn" onClick={onClose} title="Close"><IconX size={16} /></button>
+        </div>
+        <div className="drawer-body">
+          {status && <div className="hint">{status}</div>}
+          {draft && (
+            <>
+              <label>What this bot is for
+                <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Reviews my code" />
+              </label>
+              <label>System prompt
+                <textarea rows={7} value={draft.system} onChange={(e) => setDraft({ ...draft, system: e.target.value })} placeholder="You are a helpful coach…" />
+              </label>
+              <div className="bot-section">
+                <strong>Skills</strong>
+                {draft.skills.length === 0 ? (
+                  <div className="hint">All skills on (default) — including future ones. Uncheck one to take manual control.</div>
+                ) : (
+                  <div className="hint">
+                    Manual selection. <button className="link-btn" onClick={() => setDraft({ ...draft, skills: [] })}>Reset to all-on default</button>
+                  </div>
+                )}
+                {allSkills.length === 0 && <div className="hint">No skills found yet.</div>}
+                {allSkills.map((s: any) => {
+                  const id = s.id ?? s.name;
+                  const label = s.name ?? s.id;
+                  const on = draft.skills.length === 0 || draft.skills.includes(id);
+                  return (
+                    <label key={id} className="check">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => {
+                          if (draft.skills.length === 0) {
+                            // Leaving default mode: materialize "all minus this one".
+                            const allIds = allSkills.map((x: any) => x.id ?? x.name).filter(Boolean);
+                            setDraft({ ...draft, skills: allIds.filter((x) => x !== id) });
+                          } else {
+                            setDraft({
+                              ...draft,
+                              skills: on ? draft.skills.filter((x) => x !== id) : [...draft.skills, id],
+                            });
+                          }
+                        }}
+                      />
+                      <span><strong>{label}</strong>{s.description ? ` — ${s.description}` : ""}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="bot-section">
+                <strong>Tools (MCP)</strong>
+                {Object.keys(draft.mcp).length === 0 && (
+                  <div className="hint">All tools allowed (default). Set Deny only to block one.</div>
+                )}
+                {allMcp.length === 0 && <div className="hint">No tools connected yet — add some from the sidebar Tools section first.</div>}
+                {allMcp.map((m: any) => {
+                  const name = m.name;
+                  const st = typeof m.status === "string" ? m.status : m.status?.status ?? "?";
+                  const cur = draft.mcp[name] ?? draft.mcp[normServer(name)];
+                  const cycle = () => {
+                    const next = { ...draft.mcp };
+                    delete next[name];
+                    delete next[normServer(name)];
+                    if (cur === undefined) next[name] = "allow";
+                    else if (cur === "allow") next[name] = "deny";
+                    setDraft({ ...draft, mcp: next });
+                  };
+                  return (
+                    <div key={name} className="mcp-row">
+                      <span><strong>{name}</strong> <span className="dim">{st}</span></span>
+                      <button onClick={cycle} className={cur === "allow" ? "on-allow" : cur === "deny" ? "on-deny" : ""}>
+                        {cur === "allow" ? "Allow" : cur === "deny" ? "Deny" : "Default"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <details>
+                <summary>Advanced</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+                  <label>Model (empty = automatic)
+                    <select value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })}>
+                      <option value="">Automatic</option>
+                      {models.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
+                    </select>
+                  </label>
+                  <label>Accent color
+                    <input type="color" value={draft.color || "#5b8cff"} onChange={(e) => setDraft({ ...draft, color: e.target.value })} />
+                  </label>
+                  {unknown.length > 0 && <div className="hint">Kept as-is: <code>{unknown.join(" · ")}</code></div>}
+                </div>
+              </details>
+            </>
+          )}
+        </div>
+        <div className="drawer-foot">
+          <button className="btn-primary" onClick={save}><IconSave size={14} /> Save</button>
+          <button className="btn-ghost" onClick={toggleDisabled}>
+            <IconBan size={14} /> {draft?.disabled ? "Enable" : "Disable"}
+          </button>
+          <button
+            className="btn-danger"
+            onClick={remove}
+            onBlur={() => setConfirmDelete(false)}
+            title="Permanently delete this bot's file"
+          >
+            <IconTrash size={14} /> {confirmDelete ? "Confirm delete" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}

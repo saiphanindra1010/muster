@@ -1,0 +1,49 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Default to local first so the app is a real "OpenAI alternative" out of the box.
+  // Override with OPENCHAT_MODEL env or pick from UI (/models).
+  "model": "ollama/qwen3:8b",
+  "default_agent": "build",
+  "websearch": {
+    "provider": "random"
+  },
+  "permissions": [
+    { "action": "websearch", "resource": "*", "effect": "ask" },
+    { "action": "shell", "resource": "git push *", "effect": "ask" }
+  ],
+  "mcp": {
+    "timeout": { "startup": 30000, "catalog": 30000 },
+    "servers": {
+      // Local stdio example. Disabled by default so first boot is fast;
+      // enable from UI (/mcps) or set disabled:false.
+      // Everything server (reference local MCP):
+      //   "everything": {
+      //     "type": "local",
+      //     "command": ["npx", "-y", "@modelcontextprotocol/server-everything"],
+      //     "disabled": true
+      //   }
+      // Remote example (Context7 docs):
+      //   "context7": {
+      //     "type": "remote",
+      //     "url": "https://mcp.context7.com/mcp"
+      //   }
+    }
+  },
+  "providers": {
+    "ollama": {
+      "settings": { "baseURL": "http://127.0.0.1:11434/v1" }
+    },
+    "lmstudio": {
+      "settings": { "baseURL": "http://127.0.0.1:1234/v1" }
+    }
+    // Cloud providers need no config here — just set the key env var
+    // (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) or run /connect in the UI.
+    // For an OpenAI-compatible gateway ("dots" / self-hosted):
+    // "company": {
+    //   "env": ["COMPANY_GATEWAY_KEY"],
+    //   "package": "@opencode/ai/providers/openai-compatible",
+    //   "settings": { "baseURL": "https://gateway.example.com/v1" },
+    //   "models": { "coder": { "modelID": "upstream/coder-v2" } }
+    // }
+  }
+}

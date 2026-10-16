@@ -1,0 +1,17 @@
+{
+  "name": "openchat_bot",
+  "private": true,
+  "type": "module",
+  "workspaces": ["server", "src"],
+  "scripts": {
+    "start": "bun run --filter ./server dev",
+    "dev:web": "bun run --filter ./src dev",
+    "build:web": "bun run --filter ./src build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.2",
+    "typescript": "^5.6.0"
+  }
+}

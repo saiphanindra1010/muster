@@ -1,0 +1,11 @@
+{
+  "name": "@openchat_bot/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun src/launcher.ts"
+  },
+  "dependencies": {
+    "@opencode/client": "latest"
+  }
+}
