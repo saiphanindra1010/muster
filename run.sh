@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # openchat_bot one-command launcher: harness + web UI + open browser.
+# Shares the desktop app's data folder by default (same bots + chat history).
 # Usage: ./run.sh  (Ctrl+C stops everything)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -9,11 +10,25 @@ cd "$(dirname "$0")"
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 command -v bun >/dev/null || { echo "[run] bun not found on PATH"; exit 1; }
 
+# bun auto-loads .env when the launcher runs; mirror that here so both sides
+# agree on OPENCHAT_DATA_DIR / OPENCHAT_PORT before anything starts.
+if [ -f .env ]; then
+  set -a
+  . ./.env || { echo "[run] failed to load ./.env"; exit 1; }
+  set +a
+fi
+
 PORT="${OPENCHAT_PORT:-4096}"
 URL="${VITE_OPENCODE_URL:-http://127.0.0.1:$PORT}"
 WEB_PORT=1420
-TOKEN_FILE="data/state/harness-token-$PORT"
+# Same folder the desktop app uses — one set of bots + chat history in both.
+# Override for a sandbox: OPENCHAT_DATA_DIR=./data ./run.sh
+DATA_DIR="${OPENCHAT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/com.openchat.bot/openchat/data}"
+case "$DATA_DIR" in /*) ;; *) DATA_DIR="$PWD/$DATA_DIR" ;; esac
+export OPENCHAT_DATA_DIR="$DATA_DIR"
+TOKEN_FILE="$DATA_DIR/state/harness-token-$PORT"
 
+echo "[run] data folder: $DATA_DIR"
 echo "[run] starting harness on :$PORT ..."
 rm -f "$TOKEN_FILE" # stale passwords never work — each boot mints a new one
 bun run start & HARNESS_PID=$!
@@ -31,7 +46,7 @@ done
 
 export VITE_OPENCODE_TOKEN
 VITE_OPENCODE_TOKEN="$(cat "$TOKEN_FILE")"
-export VITE_WORKSPACE_DIR="$PWD/data/workspace"
+export VITE_WORKSPACE_DIR="$DATA_DIR/workspace"
 export VITE_OPENCODE_URL="$URL"
 
 echo "[run] starting web UI on :$WEB_PORT ..."

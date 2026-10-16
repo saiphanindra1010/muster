@@ -36,14 +36,16 @@ openchat_bot/
 ```sh
 cd /media/phani/DriveE/openchat_bot
 ./run.sh
-# -> starts headless harness (data/ isolation) + web UI, opens http://127.0.0.1:1420
-# Ctrl+C stops everything.
+# -> headless harness + web UI over the desktop app's data folder,
+#    opens http://127.0.0.1:1420. Ctrl+C stops everything.
 ```
 
 `run.sh` waits for the harness token, exports `VITE_OPENCODE_TOKEN` /
-`VITE_WORKSPACE_DIR`, waits for :1420, then `xdg-open`s the browser. Override
-the harness port with `OPENCHAT_PORT=4099 ./run.sh`. Manual equivalent (two
-terminals) is `bun run start` + the export line it prints, then `bun run dev:web`.
+`VITE_WORKSPACE_DIR`, waits for :1420, then `xdg-open`s the browser. Same bots
+and chat history as the desktop app (see §4). Override the harness port with
+`OPENCHAT_PORT=4099 ./run.sh`, or use a throwaway sandbox with
+`OPENCHAT_DATA_DIR=./data ./run.sh`. Manual equivalent (two terminals) is
+`bun run start` + the export line it prints, then `bun run dev:web`.
 
 Auth note (verified against opencode v2.0.28): `opencode serve` guards every
 route with HTTP Basic, user `opencode`, password = the `server password ...`
@@ -86,11 +88,21 @@ cp "$(which opencode)" src-tauri/binaries/opencode-$(rustc -vV | sed -n 's/^host
 
 ## 4. How datafolder isolation works
 
-`server/src/launcher.ts` resolves `OPENCHAT_DATA_DIR` (default `./data`) and
-exports, **before** spawning `opencode serve`:
+Browser mode and the desktop app share **one data folder** by default, so the
+same bots and chat history show up in both:
+
+| Mode | Data root |
+| --- | --- |
+| `./run.sh` (browser) | `~/.local/share/com.openchat.bot/openchat/data` |
+| Desktop app | `~/.local/share/com.openchat.bot/openchat/data` |
+| Sandbox | `OPENCHAT_DATA_DIR=./data ./run.sh` (repo-local, throwaway) |
+
+`server/src/launcher.ts` resolves `OPENCHAT_DATA_DIR` (default: the folder
+above; `$XDG_DATA_HOME` is honored) and exports, **before** spawning
+`opencode serve`:
 
 ```sh
-OPENCHAT_DATA_DIR=/media/phani/DriveE/openchat_bot/data
+OPENCHAT_DATA_DIR=<XDG_DATA_HOME>/com.openchat.bot/openchat/data
 XDG_DATA_HOME=$OPENCHAT_DATA_DIR/share
 XDG_CONFIG_HOME=$OPENCHAT_DATA_DIR/config
 XDG_STATE_HOME=$OPENCHAT_DATA_DIR/state
@@ -98,9 +110,15 @@ OPENCODE_DB=$XDG_DATA_HOME/opencode/opencode.db
 # optional: OPENCODE_DISABLE_PRUNE=1  # keep all sessions (OpenCode prunes by default)
 ```
 
-Sessions are SQLite rows in `data/share/opencode/opencode.db` (back that file
-up and you have backed up all chats). The launcher also seeds
-`templates/workspace/` into `data/workspace/` on first boot (copy-if-missing).
+Everything the harness knows lives inside that root: bots are markdown files
+in `workspace/.opencode/agents/`, sessions are SQLite rows in
+`share/opencode/opencode.db` (back up that one file and you have backed up all
+chats), the per-boot password is in `state/harness-token-<port>`. The launcher
+seeds `templates/workspace/` into the workspace on first boot
+(copy-if-missing); the desktop shell does the same under its app-data root.
+
+One caveat when both modes point at the same root: run them **one at a time**
+— two harnesses sharing one SQLite DB would fight over session state.
 
 ## 5. Connectors (MCP + websearch + providers)
 

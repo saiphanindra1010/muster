@@ -1,7 +1,8 @@
 /**
  * Launcher — the ONLY process that knows about the datafolder.
  *
- * Resolves OPENCHAT_DATA_DIR (default ./data next to repo root), exports
+ * Resolves OPENCHAT_DATA_DIR (default: the desktop app's data folder, so
+ * browser mode and desktop share bots + chat history), exports
  * XDG_* + OPENCODE_DB so `opencode serve` (the harness) stores EVERYTHING
  * inside it, then spawns the server. The web UI / Tauri shell never touch
  * OpenCode storage directly — they talk HTTP to this harness.
@@ -16,7 +17,7 @@
  * so the UI streams via fetch).
  *
  * Env in (see ../../.env.example):
- *   OPENCHAT_DATA_DIR  default ./data
+ *   OPENCHAT_DATA_DIR  default <XDG_DATA_HOME>/com.openchat.bot/openchat/data
  *   OPENCHAT_PORT/HOST default 127.0.0.1:4096
  *   OPENCODE_DISABLE_PRUNE forwarded (default 1 = keep history)
  *
@@ -25,10 +26,20 @@
  * https://opencode.ai/v2/docs/cli/web/ (serve auth + pairing model)
  */
 import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, copyFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve, join, dirname } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
-const DATA = resolve(process.env.OPENCHAT_DATA_DIR ?? join(ROOT, "data"));
+// Canonical data location: the same folder the desktop app uses, so browser
+// mode and the desktop app share bots + chat history by default. Set
+// OPENCHAT_DATA_DIR for an isolated sandbox (e.g. ./data next to the repo).
+const APP_DATA = join(
+  process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"),
+  "com.openchat.bot",
+  "openchat",
+  "data",
+);
+const DATA = resolve(process.env.OPENCHAT_DATA_DIR ?? APP_DATA);
 const SHARE = join(DATA, "share");
 const CONFIG = join(DATA, "config");
 const STATE = join(DATA, "state");
