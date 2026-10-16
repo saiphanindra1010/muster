@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "context7",
+      "kind": "mcp",
+      "name": "Context7 Docs",
+      "description": "Up-to-date library documentation and code examples for thousands of packages. No sign-in needed.",
+      "tags": ["docs", "code"],
+      "homepage": "https://context7.com",
+      "mcp": { "config": { "type": "remote", "url": "https://mcp.context7.com/mcp" } }
+    },
+    {
+      "id": "playwright",
+      "kind": "mcp",
+      "name": "Playwright (browser)",
+      "description": "Drive a real browser: navigate, click, type, screenshot and scrape web pages.",
+      "tags": ["browser", "automation"],
+      "homepage": "https://github.com/microsoft/playwright-mcp",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "@playwright/mcp@latest"],
+          "cwd": "."
+        }
+      }
+    },
+    {
+      "id": "filesystem",
+      "kind": "mcp",
+      "name": "Filesystem (workspace)",
+      "description": "Read and write files in the workspace through tools instead of shell commands.",
+      "tags": ["files"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "."],
+          "cwd": "."
+        }
+      }
+    },
+    {
+      "id": "memory",
+      "kind": "mcp",
+      "name": "Memory (knowledge graph)",
+      "description": "A persistent knowledge graph the bot can save to and recall across chats.",
+      "tags": ["memory"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "@modelcontextprotocol/server-memory"],
+          "cwd": "."
+        }
+      }
+    },
+    {
+      "id": "sequential-thinking",
+      "kind": "mcp",
+      "name": "Sequential Thinking",
+      "description": "Structured step-by-step reasoning for multi-step problems.",
+      "tags": ["reasoning"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+          "cwd": "."
+        }
+      }
+    },
+    {
+      "id": "everything",
+      "kind": "mcp",
+      "name": "Everything (reference)",
+      "description": "The reference MCP server — demo tools, prompts and resources. Handy for testing.",
+      "tags": ["testing"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "@modelcontextprotocol/server-everything"],
+          "cwd": "."
+        }
+      }
+    },
+    {
+      "id": "github",
+      "kind": "mcp",
+      "name": "GitHub",
+      "description": "Repos, issues, pull requests and code search through GitHub's hosted MCP server.",
+      "tags": ["code", "git"],
+      "requires": ["GitHub token"],
+      "homepage": "https://github.com/github/github-mcp-server",
+      "mcp": {
+        "config": { "type": "remote", "url": "https://api.githubcopilot.com/mcp/", "oauth": false },
+        "token": {
+          "header": "Authorization",
+          "prefix": "Bearer ",
+          "label": "GitHub personal access token",
+          "placeholder": "ghp_… or github_pat_…",
+          "help": "Stored in your workspace opencode.jsonc. Needs repo scope (classic) or equivalent fine-grained access."
+        }
+      }
+    },
+    {
+      "id": "sentry",
+      "kind": "mcp",
+      "name": "Sentry",
+      "description": "Search issues, events and stack traces. Requires a browser sign-in after install.",
+      "tags": ["monitoring"],
+      "homepage": "https://mcp.sentry.dev",
+      "mcp": {
+        "config": { "type": "remote", "url": "https://mcp.sentry.dev/mcp" },
+        "signin": true
+      }
+    },
+    {
+      "id": "opencode-models-discovery",
+      "kind": "plugin",
+      "name": "Models Discovery",
+      "description": "Auto-discovers OpenAI-compatible models from local providers and dynamic gateways.",
+      "tags": ["models", "providers"],
+      "homepage": "https://www.npmjs.com/package/opencode-models-discovery",
+      "plugin": { "package": "opencode-models-discovery" }
+    },
+    {
+      "id": "@tarquinen/opencode-dcp",
+      "kind": "plugin",
+      "name": "DCP — context pruning",
+      "description": "Prunes obsolete tool output from the conversation to save context tokens.",
+      "tags": ["tokens", "context"],
+      "homepage": "https://www.npmjs.com/package/@tarquinen/opencode-dcp",
+      "plugin": { "package": "@tarquinen/opencode-dcp" }
+    },
+    {
+      "id": "@langfuse/opencode-observability-plugin",
+      "kind": "plugin",
+      "name": "Langfuse Observability",
+      "description": "Sends session traces and usage to your Langfuse project for observability.",
+      "tags": ["observability"],
+      "requires": ["LANGFUSE_* env"],
+      "homepage": "https://www.npmjs.com/package/@langfuse/opencode-observability-plugin",
+      "plugin": { "package": "@langfuse/opencode-observability-plugin" }
+    },
+    {
+      "id": "release-notes",
+      "kind": "skill",
+      "name": "Release notes",
+      "description": "Draft a changelog or release notes from git history.",
+      "tags": ["writing", "git"]
+    },
+    {
+      "id": "meeting-notes",
+      "kind": "skill",
+      "name": "Meeting notes",
+      "description": "Turn raw notes or transcripts into decisions, action items and open questions.",
+      "tags": ["writing"]
+    },
+    {
+      "id": "research-brief",
+      "kind": "skill",
+      "name": "Research brief",
+      "description": "Compile a sourced, decision-ready brief on any topic.",
+      "tags": ["research"]
+    }
+  ]
+}

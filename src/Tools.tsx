@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
-import {
-  addMcpServer,
-  connectMcpServer,
-  disconnectMcpServer,
-  listMcp,
-  removeMcpServer,
-} from "./lib/bots";
+import { connectMcpServer, disconnectMcpServer, listMcp, slugify } from "./lib/bots";
+import { installMcpServer, uninstallMcpServer } from "./lib/marketplace";
 import { IconPlus, IconX } from "./icons";
 
 function statusOf(s: any): { state: string; error?: string } {
@@ -15,15 +10,16 @@ function statusOf(s: any): { state: string; error?: string } {
 
 function statusColor(st: string): string {
   if (st === "connected") return "#3ddc84";
-  if (st === "needs-auth" || st === "pending") return "#ffbd59";
+  if (st === "needs_auth" || st === "needs-auth" || st === "pending") return "#ffbd59";
   return "#ff7b72";
 }
 
 /**
  * Tools modal: connected MCP servers / plugins (Gmail-style connectors are
  * remote MCP servers), with connect / disconnect / remove and an add form.
- * Servers needing sign-in show a hint — OAuth pairing runs via
- * `opencode mcp auth <name>` in a terminal for now.
+ * Entries are written to the workspace opencode.jsonc so they persist.
+ * Servers that need OAuth sign-in show a status — that flow runs in OpenCode
+ * via /mcps for now.
  */
 export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [servers, setServers] = useState<any[]>([]);
@@ -62,10 +58,10 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
       if (kind === "local") {
         const parts = command.trim().split(/\s+/).filter(Boolean);
         if (!name.trim() || parts.length === 0) throw new Error("Name and command are required.");
-        await addMcpServer(name.trim(), { type: "local", command: parts });
+        await installMcpServer(slugify(name).replace(/\//g, "-"), { type: "local", command: parts });
       } else {
         if (!name.trim() || !url.trim()) throw new Error("Name and URL are required.");
-        await addMcpServer(name.trim(), { type: "remote", url: url.trim() });
+        await installMcpServer(slugify(name).replace(/\//g, "-"), { type: "remote", url: url.trim() });
       }
       setName("");
       setCommand("");
@@ -79,7 +75,7 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
           <h3 style={{ margin: 0, flex: 1 }}>Tools</h3>
           <button className="icon-btn" onClick={onClose} title="Close"><IconX size={16} /></button>
         </div>
-        <p>Connected servers and plugins. Remote URLs with sign-in (Gmail-style connectors) connect here, then finish sign-in with <code>opencode mcp auth &lt;name&gt;</code> in a terminal.</p>
+        <p>Connected servers and plugins. Servers that need sign-in show a status here — OAuth sign-in runs in OpenCode via <code>/mcps</code> for now.</p>
         {servers.length === 0 && <div className="hint">No tools connected yet — add one below.</div>}
         {servers.map((s: any) => {
           const { state: st, error } = statusOf(s);
@@ -88,7 +84,7 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span className="pulse" style={{ background: statusColor(st) }} />
                 <strong>{s.name}</strong>
-                <span className="dim">{st === "needs-auth" ? "needs sign-in" : st}</span>
+                <span className="dim">{st === "needs_auth" || st === "needs-auth" ? "needs sign-in" : st}</span>
               </span>
               <span style={{ display: "flex", gap: 6 }}>
                 {st !== "connected" && st !== "pending" && (
@@ -104,7 +100,7 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
                       return;
                     }
                     setConfirmRemove(null);
-                    run(() => removeMcpServer(s.name));
+                    run(() => uninstallMcpServer(s.name));
                   }}
                   onBlur={() => setConfirmRemove(null)}
                   disabled={busy}

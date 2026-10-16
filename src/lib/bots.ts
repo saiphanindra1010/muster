@@ -393,6 +393,45 @@ export function deriveBotName(text: string, taken: Set<string>): string {
   return name;
 }
 
+/** Marker identifying the built-in colleague persona (never upgrade twice). */
+const PERSONA_MARKER = "one of the user's bots";
+
+/**
+ * The colleague persona every bot gets. A non-empty agent body replaces
+ * OpenCode's base prompt — which is the point: bots introduce themselves as
+ * teammates, and the engine stays invisible in the background.
+ */
+export function buildBotPersona(name: string, focus: string): string {
+  return `You are ${name}, ${PERSONA_MARKER} — a digital colleague on their private team.
+
+Your focus: ${focus.trim() || "general help — whatever the user needs next"}
+
+How you work:
+- You are a teammate, not software. Never describe yourself as an AI assistant, a model, or as OpenCode. OpenCode is the private engine that executes your operations in the background — the user never needs to hear about it. If asked who you are: you are ${name}, one of their bots.
+- Do the work instead of describing it. Use your tools, complete the steps, then give a short, concrete update.
+- Act on your own within your focus; ask before anything destructive or irreversible.
+- Report like a colleague: "Done — …, next I can …". Brief and specific; never restate the request back.
+- If the user asks you to remember something permanently, save it as a skill in your workspace.
+- Match the user's language and tone.`;
+}
+
+/** Rewrite legacy/empty app-generated bodies to the persona; null means leave as-is. */
+function upgradedSystem(name: string, body: string): string | null {
+  if (body.includes(PERSONA_MARKER)) return null;
+  const t = body.trim();
+  if (!t) return buildBotPersona(name, "");
+  const nl = t.indexOf("\n");
+  const firstLine = (nl === -1 ? t : t.slice(0, nl)).trim();
+  const rest = nl === -1 ? "" : t.slice(nl + 1).trim();
+  // Only the exact openers older app versions generated count as legacy —
+  // hand-written prompts (even if they start with "You are …") stay untouched.
+  const esc = name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  const legacyName = new RegExp(`^You are\\s+${esc}\\s*[.,!]?$`, "i");
+  const legacyFriendly = new RegExp(`^You are\\s+${esc},\\s*a friendly,\\s*capable assistant\\.?$`, "i");
+  if (!legacyName.test(firstLine) && !legacyFriendly.test(firstLine)) return null;
+  return buildBotPersona(name, rest);
+}
+
 /**
  * One-thought bot creation: pass whatever the user typed ("review my code",
  * "help me plan trips", or nothing at all) and get a saved, discoverable bot.
@@ -409,9 +448,7 @@ export async function createBotFromPrompt(text: string): Promise<string> {
   } catch {}
   const name = deriveBotName(raw, taken);
   const description = raw.length > 120 ? raw.slice(0, 117) + "..." : raw;
-  const system = raw
-    ? `You are ${name}.\n\n${raw}`
-    : `You are ${name}, a friendly, capable assistant.`;
+  const system = buildBotPersona(name, raw);
   return saveBot(
     {
       name,
@@ -427,6 +464,60 @@ export async function createBotFromPrompt(text: string): Promise<string> {
     [],
     [],
   );
+}
+
+/**
+ * One-time upgrade: give existing bots the colleague persona. Only bodies
+ * that are empty or still use the legacy "You are <name>." template are
+ * touched — custom prompts are never overwritten. Returns how many changed.
+ */
+export async function upgradeBotPersonas(): Promise<number> {
+  const ws = await ensureLocation();
+  if (!ws) return 0;
+  let bots: any[] = [];
+  try {
+    bots = await listBots();
+  } catch {}
+  try {
+    bots = bots.concat(await listDisabledBots());
+  } catch {}
+  let changed = 0;
+  for (const b of bots) {
+    if (!b?.id) continue;
+    try {
+      const src = await readBotFile(b.id);
+      if (src == null) continue;
+      const { known, unknownLines, system } = parseBotFile(src);
+      const next = upgradedSystem(b.id, system);
+      if (!next) continue;
+      await (client as any).file.write({
+        location: { directory: ws },
+        path: `${BOTS_REL_DIR}/${b.id}.md`,
+        payload: enc.encode(
+          serializeBotFile(
+            {
+              name: b.id,
+              description: known.description ?? "",
+              mode: known.mode ?? "primary",
+              model: known.model ?? "",
+              color: known.color ?? "",
+              system: next,
+              disabled: known.disabled === true,
+              skills: known.skills ?? [],
+              mcp: known.mcp ?? {},
+            },
+            unknownLines,
+            known.rules ?? [],
+          ),
+        ),
+      });
+      changed++;
+    } catch (e) {
+      console.warn(`persona upgrade failed for ${b.id}:`, (e as Error).message);
+    }
+  }
+  if (changed) await client.location.reload();
+  return changed;
 }
 
 /** Re-point this bot's DM session(s) at a new name after a rename (best-effort). */
@@ -512,22 +603,6 @@ export async function listMcp(): Promise<any[]> {
 function mcpLoc() {
   const ws = workspaceDir();
   return ws ? { location: { directory: ws } } : undefined;
-}
-
-/** Add a local-stdio or remote MCP server (connectors like Gmail go here as remote URLs). */
-export async function addMcpServer(
-  name: string,
-  config: { type: "local"; command: string[] } | { type: "remote"; url: string },
-): Promise<void> {
-  const slug = slugify(name).replace(/\//g, "-");
-  if (!slug) throw new Error("Server name is empty.");
-  await (client as any).mcp.add({ server: slug, location: mcpLoc(), config } as any);
-  await client.location.reload();
-}
-
-export async function removeMcpServer(name: string): Promise<void> {
-  await (client as any).mcp.remove({ server: name, location: mcpLoc() } as any);
-  await client.location.reload();
 }
 
 export async function connectMcpServer(name: string): Promise<void> {

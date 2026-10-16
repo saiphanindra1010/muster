@@ -128,13 +128,35 @@ share them:
 - **Providers (OpenAI alternative / local):** `providers.ollama` (no key),
   `lmstudio`, plus cloud via env keys. See https://opencode.ai/v2/docs/providers/
 - **MCP:** `mcp.servers` — local stdio + remote Streamable HTTP + OAuth.
-  Manage live from the UI sidebar (Tools → Add): remote URL or local command,
-  Connect / Stop / Remove. Remote servers needing sign-in show `needs-auth`.
+  Install from the **Marketplace** (§6) or manually via the sidebar Tools panel;
+  both write the workspace `opencode.jsonc`, so installs persist. Remote servers
+  needing sign-in show as `needs_auth`.
   See https://opencode.ai/v2/docs/mcp-servers/
 - **Websearch:** `websearch.provider: "random"` + `EXA/TAVILY/FIRECRAWL/PARALLEL`
   keys. Permission-gated. See https://opencode.ai/v2/docs/websearch/
 
-## 6. Bots (custom agents with skills + MCP)
+## 6. Marketplace (one-click connectors, plugins, skills)
+
+Sidebar → **Marketplace**: browse, click Install, done. Same mechanics as
+creating a bot — the app writes your workspace config and calls
+`location.reload()` — so installs persist across restarts, no terminal steps.
+
+- **Connectors (MCP)** → `mcp.servers.<name>` in `<workspace>/opencode.jsonc`.
+  Cards show live status (connected / needs sign-in). GitHub-style connectors
+  take a token inline (written as an `Authorization: Bearer` header); OAuth-only
+  connectors install immediately and honestly show "Needs sign-in" — finish that
+  from OpenCode with `/mcps`.
+- **Plugins (npm)** → `plugins: [...]` in the workspace config; the harness
+  installs the package in the background (~40–60 s — the modal keeps polling
+  until it turns active). Any npm package can be added by name.
+- **Skills** → `.opencode/skills/<id>/SKILL.md` (bodies bundled with the app).
+- Remove = config entry removed + reload. Everything round-trips through
+  `src/lib/jsonc.ts`, a comment/format-preserving JSONC editor, so hand-written
+  comments and unknown keys survive edits.
+
+The catalog lives in `src/marketplace.json` (ids, npm refs, commands, help).
+
+## 7. Bots (custom agents with skills + MCP)
 
 Sidebar ＋ (or the field on the home screen) — just say what the bot should
 do, one click to create and start chatting. No name form: the name is derived
@@ -156,12 +178,18 @@ its chat history follows the rename. An empty prompt creates a general-purpose
   confirm.
 - Hand-written permission rules and unknown frontmatter keys round-trip untouched.
 
+Every bot carries a **colleague persona** in its system-prompt body: it speaks
+as one of your bots and never as "OpenCode" — the engine stays invisible
+background plumbing. Bots created before this existed are upgraded once at
+first boot; only empty or legacy app-generated bodies are touched, hand-written
+prompts are never overwritten.
+
 Bots can also **manage skills themselves**: the workspace ships
 `.opencode/skills/manage-skills/SKILL.md` (seeded from `templates/`), which
 teaches any bot to create/update skill files when asked ("remember this",
 "update the X skill").
 
-## 7. The team view
+## 8. The team view
 
 Bots behave like background colleagues, not request/response toys:
 
@@ -179,7 +207,7 @@ Bots behave like background colleagues, not request/response toys:
 - Sessions that were mid-turn when the UI went away are re-marked "working" at
   boot (`time.updated > time.idle` heuristic) and re-verified by the stream.
 
-## 8. Reliability notes (verified live against v2.0.28)
+## 9. Reliability notes (verified live against v2.0.28)
 
 - **Prompts sent while a bot is mid-turn are queued, not swallowed** (the
   harness enqueues them in the session inbox). The UI composer keeps working
@@ -193,7 +221,7 @@ Bots behave like background colleagues, not request/response toys:
 - Reasoning parts (`session.reasoning.*`) are intentionally hidden — the UI
   renders final text + tool activity only.
 
-## 9. Scripts
+## 10. Scripts
 
 | cmd | what |
 |---|---|
@@ -204,7 +232,7 @@ Bots behave like background colleagues, not request/response toys:
 | `bun run tauri:dev` | desktop window in dev mode |
 | `bun run tauri:build` | .deb bundle (needs cargo + system webkit deps) |
 
-## 10. UI ↔ harness mapping
+## 11. UI ↔ harness mapping
 
 | UI element | Harness call |
 |---|---|
@@ -220,5 +248,6 @@ Bots behave like background colleagues, not request/response toys:
 | Rename bot | `session.update` (title + metadata) so the DM chat follows the new name |
 | Team roster dots | `permission.list` per session (boot) + global events: `permission.asked/replied`, `session.execution.*`, `session.idle` |
 | Skills / MCP catalogs | `skill.list`, `mcp.list`; skills auto-activated with `session.skill` |
+| Marketplace install/remove | `file.write` on workspace `opencode.jsonc` + `location.reload`; live status from `mcp.list` / `plugin.list` / `skill.list` |
 
 Keep UI dumb: all agent/tool reasoning stays in OpenCode.

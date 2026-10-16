@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
-import { activateBotSkills, createBotFromPrompt, listBots, listDisabledBots, listMcp, resolveBotSkills } from "./lib/bots";
+import { activateBotSkills, createBotFromPrompt, listBots, listDisabledBots, listMcp, resolveBotSkills, upgradeBotPersonas } from "./lib/bots";
 import {
   IconActivity, IconArrowUp, IconBot, IconCheck, IconChevronDown, IconCopy,
-  IconGear, IconPlus, IconStop, IconThumbsDown, IconThumbsUp,
+  IconGear, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
   IconUser,
 } from "./icons";
 import { BotAvatar } from "./avatar";
 import { BotSettings } from "./Bots";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Tools } from "./Tools";
+import { Marketplace } from "./Marketplace";
 
 type Session = { id: string; kind?: string; bot?: string };
 type ChatMsg = {
@@ -92,6 +93,7 @@ export function App() {
   const [disabledBots, setDisabledBots] = useState<Array<{ id: string; color?: string; description?: string }>>([]);
   const [tools, setTools] = useState<any[]>([]);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(false);
   const [activeID, setActiveID] = useState<string | null>(null);
   const [activeBot, setActiveBot] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
@@ -215,6 +217,19 @@ export function App() {
       setTools(await listMcp());
     } catch {}
   };
+
+  // One-time: fill in the colleague persona for bots created before it existed.
+  const personasUpgraded = useRef(false);
+  useEffect(() => {
+    if (!harnessOk || personasUpgraded.current) return;
+    personasUpgraded.current = true;
+    upgradeBotPersonas()
+      .then((n) => {
+        if (n) refreshCatalogs();
+      })
+      .catch((e) => console.warn("persona upgrade failed:", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [harnessOk]);
 
   const loadThread = async (id: string) => {
     try {
@@ -773,7 +788,7 @@ export function App() {
           <ul>
             {tools.map((t: any) => {
               const st = typeof t.status === "string" ? t.status : t.status?.status ?? "?";
-              const col = st === "connected" ? "#3ddc84" : st === "needs-auth" || st === "pending" ? "#ffbd59" : "#ff7b72";
+              const col = st === "connected" ? "#3ddc84" : st === "needs_auth" || st === "needs-auth" || st === "pending" ? "#ffbd59" : "#ff7b72";
               return (
                 <li key={t.name}>
                   <button className="bot-row" onClick={() => setToolsOpen(true)} title={`${t.name} — ${st}`}>
@@ -784,11 +799,17 @@ export function App() {
               );
             })}
             {tools.length === 0 && (
-              <li><button className="bot-row dim" onClick={() => setToolsOpen(true)}>Connect Gmail, GitHub…</button></li>
+              <li><button className="bot-row dim" onClick={() => setMarketOpen(true)}>Connect Gmail, GitHub…</button></li>
             )}
+            <li>
+              <button className="bot-row" onClick={() => setMarketOpen(true)} title="Connectors, plugins and skills">
+                <IconStore size={15} />
+                <span className="nm">Marketplace</span>
+              </button>
+            </li>
           </ul>
         </nav>
-        <footer>{harnessOk ? "Harness running in the background" : "Connecting to the harness…"}</footer>
+        <footer>{harnessOk ? "Engine ready — bots run in the background" : "Waking up the team…"}</footer>
       </aside>
 
       <div className="main">
@@ -964,6 +985,12 @@ export function App() {
       {toolsOpen && (
         <ErrorBoundary key="tools" label="tools" onClose={() => setToolsOpen(false)}>
           <Tools onClose={() => setToolsOpen(false)} onChanged={() => { refreshCatalogs(); }} />
+        </ErrorBoundary>
+      )}
+
+      {marketOpen && (
+        <ErrorBoundary key="market" label="marketplace" onClose={() => setMarketOpen(false)}>
+          <Marketplace onClose={() => setMarketOpen(false)} onChanged={() => { refreshCatalogs(); }} />
         </ErrorBoundary>
       )}
     </div>

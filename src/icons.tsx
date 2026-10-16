@@ -3,23 +3,29 @@ import {
   Activity,
   ArrowUp,
   Ban,
+  BookOpen,
   Bot,
   Check,
   ChevronDown,
   Copy,
+  ExternalLink,
   MessageCircle,
+  Package,
   Pencil,
   Plug,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Settings,
   Sparkles,
   Square,
+  Store,
   ThumbsDown,
   ThumbsUp,
   Trash2,
   User,
+  Wrench,
   X,
 } from "lucide-react";
 
@@ -50,3 +56,9 @@ export const IconBot = w(Bot);
 export const IconTrash = w(Trash2);
 export const IconGear = w(Settings);
 export const IconPlug = w(Plug);
+export const IconStore = w(Store);
+export const IconSearch = w(Search);
+export const IconPackage = w(Package);
+export const IconBook = w(BookOpen);
+export const IconWrench = w(Wrench);
+export const IconExternal = w(ExternalLink);
