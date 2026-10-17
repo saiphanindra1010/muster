@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { connectMcpServer, disconnectMcpServer, listMcp, slugify } from "./lib/bots";
+import { connectMcpServer, disconnectMcpServer, listMcp, mcpStatusLabel, slugify } from "./lib/bots";
 import { installMcpServer, uninstallMcpServer } from "./lib/marketplace";
 import { IconPlus, IconX } from "./icons";
+import { useEscape } from "./lib/useEscape";
 
 function statusOf(s: any): { state: string; error?: string } {
   if (typeof s.status === "string") return { state: s.status };
@@ -9,17 +10,16 @@ function statusOf(s: any): { state: string; error?: string } {
 }
 
 function statusColor(st: string): string {
-  if (st === "connected") return "#3ddc84";
-  if (st === "needs_auth" || st === "needs-auth" || st === "pending") return "#ffbd59";
-  return "#ff7b72";
+  if (st === "connected") return "var(--green)";
+  if (st === "needs_auth" || st === "needs-auth" || st === "pending") return "var(--amber)";
+  return "var(--red)";
 }
 
 /**
  * Tools modal: connected MCP servers / plugins (Gmail-style connectors are
  * remote MCP servers), with connect / disconnect / remove and an add form.
  * Entries are written to the workspace opencode.jsonc so they persist.
- * Servers that need OAuth sign-in show a status — that flow runs in OpenCode
- * via /mcps for now.
+ * Servers that need OAuth sign-in show a status — the harness owns that flow.
  */
 export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [servers, setServers] = useState<any[]>([]);
@@ -30,6 +30,8 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+
+  useEscape(onClose);
 
   const refresh = async () => {
     setServers(await listMcp());
@@ -75,8 +77,8 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
           <h3 style={{ margin: 0, flex: 1 }}>Tools</h3>
           <button className="icon-btn" onClick={onClose} title="Close"><IconX size={16} /></button>
         </div>
-        <p>Connected servers and plugins. Servers that need sign-in show a status here — OAuth sign-in runs in OpenCode via <code>/mcps</code> for now.</p>
-        {servers.length === 0 && <div className="hint">No tools connected yet — add one below.</div>}
+        <p>Tools your bots can use. Anything that needs a sign-in shows its status here.</p>
+        {servers.length === 0 && <div className="hint">Nothing connected yet — add a tool below.</div>}
         {servers.map((s: any) => {
           const { state: st, error } = statusOf(s);
           return (
@@ -84,14 +86,14 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span className="pulse" style={{ background: statusColor(st) }} />
                 <strong>{s.name}</strong>
-                <span className="dim">{st === "needs_auth" || st === "needs-auth" ? "needs sign-in" : st}</span>
+                <span className="dim">{mcpStatusLabel(st)}</span>
               </span>
               <span style={{ display: "flex", gap: 6 }}>
                 {st !== "connected" && st !== "pending" && (
                   <button onClick={() => run(() => connectMcpServer(s.name))} disabled={busy}>Connect</button>
                 )}
                 {(st === "connected" || st === "pending") && (
-                  <button onClick={() => run(() => disconnectMcpServer(s.name))} disabled={busy}>Stop</button>
+                  <button onClick={() => run(() => disconnectMcpServer(s.name))} disabled={busy}>Disconnect</button>
                 )}
                 <button
                   onClick={() => {
@@ -130,7 +132,7 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
             ))}
           </div>
           <label>Server name
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. gmail, github, context7" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. gmail, github, notion" />
           </label>
           {kind === "remote" ? (
             <label>Server URL
@@ -142,7 +144,7 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
             </label>
           )}
           <button className="btn-primary" onClick={add} disabled={busy} style={{ alignSelf: "flex-start" }}>
-            <IconPlus size={14} /> {busy ? "Working…" : "Add tool"}
+            <IconPlus size={14} /> {busy ? "Adding…" : "Add tool"}
           </button>
         </div>
         {err && <div className="err">{err}</div>}

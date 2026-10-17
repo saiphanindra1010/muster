@@ -3,6 +3,7 @@ import {
   deleteBot,
   listMcp,
   listSkills,
+  mcpStatusLabel,
   normServer,
   parseBotFile,
   readBotFile,
@@ -15,6 +16,7 @@ import {
 } from "./lib/bots";
 import { IconBan, IconSave, IconTrash, IconX } from "./icons";
 import { workspaceDir } from "./lib/opencode";
+import { useEscape } from "./lib/useEscape";
 
 /**
  * Bot settings drawer: edit one bot (system prompt, skills, MCP, advanced).
@@ -37,13 +39,15 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
   const [confirmDelete, setConfirmDelete] = useState(false);
   const ws = workspaceDir();
 
+  useEscape(onClose);
+
   useEffect(() => {
     (async () => {
       setAllSkills(await listSkills());
       setAllMcp(await listMcp());
       const src = await readBotFile(botId);
       if (src == null) {
-        setStatus(`Could not read bot file for ${botId}.`);
+        setStatus(`Could not open settings for ${botId}.`);
         return;
       }
       const { known, unknownLines, system } = parseBotFile(src);
@@ -67,11 +71,11 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
     if (!draft) return;
     const target = slugify(draft.name);
     if (!target) {
-      setStatus("Give it a name — a plain word like “coach” works.");
+      setStatus("Enter a name — a single word such as “coach” works.");
       return;
     }
     if (target !== botId && (await readBotFile(target)) != null) {
-      setStatus(`A bot called “${target}” already exists — pick another name.`);
+      setStatus(`A bot named “${target}” already exists. Choose a different name.`);
       return;
     }
     try {
@@ -85,7 +89,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
       onChanged();
       onClose();
     } catch (e) {
-      setStatus(`Save failed: ${(e as Error).message}`);
+      setStatus(`Could not save: ${(e as Error).message}`);
     }
   };
 
@@ -97,14 +101,14 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
       onChanged();
       onClose();
     } catch (e) {
-      setStatus(`Failed: ${(e as Error).message}`);
+      setStatus(`Could not update this bot: ${(e as Error).message}`);
     }
   };
 
   const remove = async () => {
     if (!confirmDelete) {
       setConfirmDelete(true);
-      setStatus("Click Delete again to permanently remove this bot.");
+      setStatus("Click Delete again to confirm — this cannot be undone.");
       return;
     }
     try {
@@ -115,7 +119,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
       onClose();
     } catch (e) {
       setConfirmDelete(false);
-      setStatus(`Delete failed: ${(e as Error).message}`);
+      setStatus(`Could not delete: ${(e as Error).message}`);
     }
   };
 
@@ -137,24 +141,24 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
                 <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="coach" />
               </label>
               {draft.name !== botId && (
-                <div className="hint">Renaming keeps this bot's chat history. The name can also stay as-is — it was picked for you.</div>
+                <div className="hint">Renaming keeps this bot's chat history. You can also keep the current name.</div>
               )}
               <label>What this bot is for
-                <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Reviews my code" />
+                <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Reviews my code and explains it" />
               </label>
               <label>System prompt
-                <textarea rows={7} value={draft.system} onChange={(e) => setDraft({ ...draft, system: e.target.value })} placeholder="You are a helpful coach…" />
+                <textarea rows={7} value={draft.system} onChange={(e) => setDraft({ ...draft, system: e.target.value })} placeholder="You are an experienced coach. Keep answers short and practical." />
               </label>
               <div className="bot-section">
                 <strong>Skills</strong>
                 {draft.skills.length === 0 ? (
-                  <div className="hint">All skills on (default) — including future ones. Uncheck one to take manual control.</div>
+                  <div className="hint">All skills are enabled by default, including ones added later. Turn one off to manage the list manually.</div>
                 ) : (
                   <div className="hint">
-                    Manual selection. <button className="link-btn" onClick={() => setDraft({ ...draft, skills: [] })}>Reset to all-on default</button>
+                    Manual selection. <button className="link-btn" onClick={() => setDraft({ ...draft, skills: [] })}>Restore default (all enabled)</button>
                   </div>
                 )}
-                {allSkills.length === 0 && <div className="hint">No skills found yet.</div>}
+                {allSkills.length === 0 && <div className="hint">No skills installed yet.</div>}
                 {allSkills.map((s: any) => {
                   const id = s.id ?? s.name;
                   const label = s.name ?? s.id;
@@ -185,27 +189,39 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
               <div className="bot-section">
                 <strong>Tools (MCP)</strong>
                 {Object.keys(draft.mcp).length === 0 && (
-                  <div className="hint">All tools allowed (default). Set Deny only to block one.</div>
+                  <div className="hint">All tools are allowed by default. Set a tool to Deny to block it.</div>
                 )}
-                {allMcp.length === 0 && <div className="hint">No tools connected yet — add some from the sidebar Tools section first.</div>}
+                {allMcp.length === 0 && <div className="hint">No tools connected yet. Add one from Tools in the sidebar first.</div>}
                 {allMcp.map((m: any) => {
                   const name = m.name;
                   const st = typeof m.status === "string" ? m.status : m.status?.status ?? "?";
                   const cur = draft.mcp[name] ?? draft.mcp[normServer(name)];
-                  const cycle = () => {
+                  const setAccess = (v: "allow" | "deny" | undefined) => {
                     const next = { ...draft.mcp };
                     delete next[name];
                     delete next[normServer(name)];
-                    if (cur === undefined) next[name] = "allow";
-                    else if (cur === "allow") next[name] = "deny";
+                    if (v) next[name] = v;
                     setDraft({ ...draft, mcp: next });
                   };
                   return (
                     <div key={name} className="mcp-row">
-                      <span><strong>{name}</strong> <span className="dim">{st}</span></span>
-                      <button onClick={cycle} className={cur === "allow" ? "on-allow" : cur === "deny" ? "on-deny" : ""}>
-                        {cur === "allow" ? "Allow" : cur === "deny" ? "Deny" : "Default"}
-                      </button>
+                      <span><strong>{name}</strong> <span className="dim">{mcpStatusLabel(st)}</span></span>
+                      <span className="tri" role="group" aria-label={`${name} access`}>
+                        {(["default", "allow", "deny"] as const).map((v) => {
+                          const on = v === "default" ? cur === undefined : cur === v;
+                          return (
+                            <button
+                              key={v}
+                              className={`${v}${on ? " on" : ""}`}
+                              aria-pressed={on}
+                              title={v === "default" ? "Inherit the global setting" : v === "allow" ? "Always allow this tool" : "Always block this tool"}
+                              onClick={() => setAccess(v === "default" ? undefined : v)}
+                            >
+                              {v === "default" ? "Default" : v === "allow" ? "Allow" : "Deny"}
+                            </button>
+                          );
+                        })}
+                      </span>
                     </div>
                   );
                 })}
@@ -213,7 +229,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
               <details>
                 <summary>Advanced</summary>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
-                  <label>Model (empty = automatic)
+                  <label>Model
                     <select value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })}>
                       <option value="">Automatic</option>
                       {models.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
@@ -222,7 +238,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
                   <label>Accent color
                     <input type="color" value={draft.color || "#5b8cff"} onChange={(e) => setDraft({ ...draft, color: e.target.value })} />
                   </label>
-                  {unknown.length > 0 && <div className="hint">Kept as-is: <code>{unknown.join(" · ")}</code></div>}
+                  {unknown.length > 0 && <div className="hint">Kept unchanged: <code>{unknown.join(" · ")}</code></div>}
                 </div>
               </details>
             </>
@@ -237,7 +253,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
             className="btn-danger"
             onClick={remove}
             onBlur={() => setConfirmDelete(false)}
-            title="Permanently delete this bot's file"
+            title="Permanently delete this bot"
           >
             <IconTrash size={14} /> {confirmDelete ? "Confirm delete" : "Delete"}
           </button>

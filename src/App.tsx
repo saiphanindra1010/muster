@@ -2,15 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
-import { chatHasStaleSkillMarker, createBotFromPrompt, listBots, listDisabledBots, listMcp, upgradeBotPersonas } from "./lib/bots";
+import { chatHasStaleSkillMarker, createBotFromPrompt, listBots, listDisabledBots, listMcp, mcpStatusLabel, upgradeBotPersonas } from "./lib/bots";
+import { useEscape } from "./lib/useEscape";
 import {
   IconActivity, IconArrowUp, IconBot, IconCheck, IconChevronDown, IconCopy,
   IconGear, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
-  IconUser,
 } from "./icons";
 import { BotAvatar } from "./avatar";
 import { BotSettings } from "./Bots";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { Settings } from "./Settings";
+import { applyAppearance, loadAppearance, watchSystemAppearance, type Appearance } from "./theme";
 import { Tools } from "./Tools";
 import { Marketplace } from "./Marketplace";
 
@@ -41,9 +43,9 @@ type BotMeta = { id: string; color?: string; description?: string };
 
 const STARTERS = [
   "Introduce yourself",
-  "Remember that I like short answers",
+  "Remember that I prefer short answers",
   "What skills do you have?",
-  "What can you do here?",
+  "What can you help with?",
 ];
 
 /** How long without ANY event before we assume a turn was dropped. */
@@ -206,6 +208,8 @@ export function App() {
   const [tools, setTools] = useState<any[]>([]);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [marketOpen, setMarketOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance());
   const [activeID, setActiveID] = useState<string | null>(null);
   const [activeBot, setActiveBot] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
@@ -293,7 +297,7 @@ export function App() {
       delete watchdogs.current[sid];
       setSessionBusy(sid, false);
       if (sid === activeIDRef.current) {
-        say("No activity for a while — reloading the thread. The harness may have dropped this turn.");
+        say("This turn went quiet — reloading the thread to catch up.");
         loadThread(sid);
         loadPerms(sid);
       }
@@ -366,6 +370,18 @@ export function App() {
   useEffect(() => {
     activeBotRef.current = activeBot;
   }, [activeBot]);
+
+  // Appearance: light / dark / system. Painted on <html>, saved locally,
+  // and re-applied when the OS flips while set to "system".
+  useEffect(() => {
+    applyAppearance(appearance);
+    return watchSystemAppearance(appearance);
+  }, [appearance]);
+
+  // Escape closes the New bot dialog, except while it's creating.
+  useEscape(() => {
+    if (!creating) setModal(null);
+  });
 
   const refreshSessions = async () => {
     try {
@@ -533,7 +549,7 @@ export function App() {
       await (client as any).permission.reply({ sessionID: id, requestID, decision });
       loadPerms(id);
     } catch (e) {
-      say(`Permission reply failed: ${(e as Error).message}`);
+      say(`Could not send your reply: ${(e as Error).message}`);
     }
   };
 
@@ -609,7 +625,7 @@ export function App() {
       refreshCatalogs();
       await openBot(slug);
     } catch (e) {
-      const msg = `Create failed: ${(e as Error).message}`;
+      const msg = `Could not create this bot: ${(e as Error).message}`;
       setModal((m) => (m ? { ...m, err: msg } : m));
       if (!modal) say(msg);
     } finally {
@@ -666,7 +682,7 @@ export function App() {
         // Delivery can beat the HTTP response — fold it in that case too.
         if (deliveredInbox.current.has(inboxID)) foldDelivered(id!, inboxID);
       }
-      if (queued) say("Queued — runs right after the current step.");
+      if (queued) say("Queued — it will run right after the current step.");
     } catch (e) {
       clearWatchdog(id!);
       if (!wasBusy) setSessionBusy(id!, false);
@@ -677,7 +693,7 @@ export function App() {
         else delete n[id!];
         return n;
       });
-      say(`Send failed: ${(e as Error).message}`);
+      say(`Could not send: ${(e as Error).message}`);
       return;
     }
   };
@@ -723,7 +739,7 @@ export function App() {
     try {
       await client.session.switchModel({ sessionID: id, model: { id: m.id, providerID: m.providerID } });
     } catch (e) {
-      say(`Model switch failed: ${(e as Error).message}`);
+      say(`Could not switch model: ${(e as Error).message}`);
     }
   };
 
@@ -776,7 +792,7 @@ export function App() {
         case "session.execution.interrupted":
         case "session.idle": {
           if (!sid) break;
-          if (t === "session.execution.failed" && isActive()) say("That turn failed — see the thread for details.");
+          if (t === "session.execution.failed" && isActive()) say("The turn did not complete — see the thread for details.");
           clearWatchdog(sid);
           delete turns.current[sid];
           setSessionBusy(sid, false);
@@ -1105,7 +1121,7 @@ export function App() {
       const single = row.items.length === 1 ? row.items[0] : null;
       if (single) {
         stream.push(
-          <div key={row.key} className="slack-msg compact">
+          <div key={row.key} className="slack-msg compact tool-row">
             <div className="slack-body">
               <span className={`tool-line${single.state === "error" ? " err" : ""}`}>
                 {single.state === "running" ? <span className="run-dot" /> : <IconActivity size={12} />} {single.text}
@@ -1126,7 +1142,7 @@ export function App() {
       const anyErr = row.items.some((x) => x.state === "error");
       const lastIt = row.items[row.items.length - 1];
       stream.push(
-        <div key={row.key} className="slack-msg compact">
+        <div key={row.key} className="slack-msg compact tool-row">
           <div className="slack-body">
             <button
               className={`tool-cluster${open ? " open" : ""}${anyErr ? " err" : ""}`}
@@ -1163,11 +1179,27 @@ export function App() {
     const skey = `${m.role}:${s.name}`;
     const compact = skey === lastSender;
     lastSender = skey;
+    if (m.role === "user") {
+      // Your side: a tinted bubble on the right, clock above it. No avatar —
+      // in a solo human/machine thread it would only be noise.
+      stream.push(
+        <div key={row.tkey} className="slack-msg from-user">
+          <div className="slack-body">
+            <div className="slack-head user-head">
+              {m.queued && <span className="queued-tag">queued</span>}
+              <span className="time">{fmtTime(m.time)}</span>
+            </div>
+            <div className="slack-text plain bubble">{m.text}</div>
+          </div>
+        </div>,
+      );
+      return;
+    }
     stream.push(
-      <div key={row.tkey} className={`slack-msg ${compact ? "compact" : ""}`}>
+      <div key={row.tkey} className={`slack-msg ${compact ? "compact" : ""}${streamed ? " live" : ""}`}>
         {!compact ? (
           <div className="avatar">
-            {s.user ? <IconUser size={22} /> : <BotAvatar seed={s.name} color={s.col} size={32} />}
+            <BotAvatar seed={s.name} color={s.col} size={32} />
           </div>
         ) : (
           <div className="avatar-ghost">{fmtTime(m.time)}</div>
@@ -1179,10 +1211,8 @@ export function App() {
               <span className="time">{streamed ? "now" : fmtTime(m.time)}</span>
             </div>
           )}
-          {m.role === "user"
-            ? <div className="slack-text plain">{m.text}</div>
-            : <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />}
-          {m.role === "assistant" && !streamed && (
+          <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+          {!streamed && (
             <div className="msg-actions">
               <button onClick={() => copy(m.text, m.key)} title="Copy">{votes[`c:${m.key}`] ? <IconCheck size={14} /> : <IconCopy size={14} />}</button>
               <button className={votes[m.key] === 1 ? "lit" : ""} onClick={() => vote(m.key, 1)} title="Good response"><IconThumbsUp size={14} /></button>
@@ -1208,15 +1238,13 @@ export function App() {
   const elapsed = busy && startT ? fmtClock(now - startT) : "";
 
   const renderPending = (p: ChatMsg) => (
-    <div key={p.key} className="slack-msg">
-      <div className="avatar"><IconUser size={22} /></div>
+    <div key={p.key} className="slack-msg from-user live">
       <div className="slack-body">
-        <div className="slack-head">
-          <strong>You</strong>
-          <span className="time">{fmtTime(p.time)}</span>
+        <div className="slack-head user-head">
           {p.queued && <span className="queued-tag">queued</span>}
+          <span className="time">{fmtTime(p.time)}</span>
         </div>
-        <div className="slack-text plain">{p.text}</div>
+        <div className="slack-text plain bubble">{p.text}</div>
       </div>
     </div>
   );
@@ -1233,9 +1261,7 @@ export function App() {
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
       />
       <div className="composer-bar">
-        <span className="dim" style={{ paddingLeft: 8 }}>
-          {busy ? "Working — send more and it runs right after" : "Replies stream live · bot remembers skills you teach it"}
-        </span>
+        {busy && <span className="composer-hint">Working — additional messages are queued</span>}
         <span className="spacer" />
         {busy && <button className="send-btn stop" onClick={interrupt} title="Stop"><IconStop size={13} /></button>}
         <button
@@ -1276,9 +1302,17 @@ export function App() {
                 st === "done" ? "new reply while you were away" : "";
               return (
                 <li key={b.id}>
-                  <button
+                  <div
                     className={`bot-row ${activeBot === b.id ? "active" : ""} ${st === "needs-you" ? "needs" : ""}`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => openBot(b.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openBot(b.id);
+                      }
+                    }}
                     title={[b.description ?? b.id, stText].filter(Boolean).join(" — ")}
                   >
                     <span className="avatar small">
@@ -1286,18 +1320,18 @@ export function App() {
                     </span>
                     <span className="nm">{b.id}</span>
                     {st && <span className={`status-dot ${st}`} title={stText} />}
-                    <span
-                      className="gear" role="button" title={`${b.id} settings`}
+                    <button
+                      className="gear" title={`${b.id} settings`} aria-label={`${b.id} settings`}
                       onClick={(e) => { e.stopPropagation(); setSettingsBot(b.id); }}
                     >
                       <IconGear size={14} />
-                    </span>
-                  </button>
+                    </button>
+                  </div>
                 </li>
               );
             })}
             {bots.length === 0 && (
-              <li><button className="bot-row" onClick={() => setModal({ text: "", err: "" })}>Make your first bot</button></li>
+              <li><button className="bot-row" onClick={() => setModal({ text: "", err: "" })}>Create your first bot</button></li>
             )}
           </ul>
           {disabledBots.length > 0 && (
@@ -1323,21 +1357,17 @@ export function App() {
           )}
           <div className="sec-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>Tools</span>
-            <button
-              title="Manage tools"
-              onClick={() => setToolsOpen(true)}
-              style={{ background: "transparent", border: "none", color: "var(--faint)", cursor: "pointer", fontSize: 14, padding: "0 6px", borderRadius: 6 }}
-            >
+            <button className="mini-btn" title="Manage tools" aria-label="Manage tools" onClick={() => setToolsOpen(true)}>
               <IconPlus size={13} />
             </button>
           </div>
           <ul>
             {tools.map((t: any) => {
               const st = typeof t.status === "string" ? t.status : t.status?.status ?? "?";
-              const col = st === "connected" ? "#3ddc84" : st === "needs_auth" || st === "needs-auth" || st === "pending" ? "#ffbd59" : "#ff7b72";
+              const col = st === "connected" ? "var(--green)" : st === "needs_auth" || st === "needs-auth" || st === "pending" ? "var(--amber)" : "var(--red)";
               return (
                 <li key={t.name}>
-                  <button className="bot-row" onClick={() => setToolsOpen(true)} title={`${t.name} — ${st}`}>
+                  <button className="bot-row" onClick={() => setToolsOpen(true)} title={`${t.name} — ${mcpStatusLabel(st)}`}>
                     <span className="pulse" style={{ background: col }} />
                     <span className="nm">{t.name}</span>
                   </button>
@@ -1355,7 +1385,12 @@ export function App() {
             </li>
           </ul>
         </nav>
-        <footer>{harnessOk ? "Engine ready — bots run in the background" : "Waking up the team…"}</footer>
+        <footer className="side-foot">
+          <span className="side-status">{harnessOk ? "Ready — bots keep working in the background" : "Starting up…"}</span>
+          <button className="icon-btn" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+            <IconGear size={15} />
+          </button>
+        </footer>
       </aside>
 
       <div className="main">
@@ -1366,8 +1401,8 @@ export function App() {
               <h1>Talk to your bots</h1>
               <div className="lede">
                 {bots.length === 0
-                  ? "Describe a bot below — it gets a name automatically and opens in chat."
-                  : "Pick a bot and give it a task — they keep working while you're elsewhere."}
+                  ? "Describe what you need — your bot gets a name automatically and opens in chat."
+                  : "Pick a bot and give it a task — it keeps working while you're away."}
               </div>
               {bots.length > 0 && (
                 <div className="bot-grid">
@@ -1383,7 +1418,7 @@ export function App() {
                 <input
                   value={newBotText}
                   onChange={(e) => setNewBotText(e.target.value)}
-                  placeholder={bots.length === 0 ? "e.g. help me plan trips" : "Describe a new bot…"}
+                  placeholder={bots.length === 0 ? "e.g. Plan and organise trips" : "Describe a new bot…"}
                   autoFocus={bots.length === 0}
                   disabled={creating}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createBot(newBotText); } }}
@@ -1392,7 +1427,7 @@ export function App() {
                   <IconPlus size={15} /> {creating ? "Creating…" : "Create"}
                 </button>
               </div>
-              <div className="hint" style={{ marginTop: 6 }}>The name is picked for you — rename anytime by clicking it in the chat header.</div>
+              <div className="hint" style={{ marginTop: 6 }}>Names are chosen automatically — rename anytime from the chat header.</div>
             </div>
           </div>
         ) : (
@@ -1424,7 +1459,7 @@ export function App() {
                     <span className="acts">
                       <button onClick={() => replyPerm(p.id, "once")}>Allow</button>
                       <button onClick={() => replyPerm(p.id, "always")}>Always</button>
-                      <button onClick={() => replyPerm(p.id, "reject")}>Deny</button>
+                      <button className="deny" onClick={() => replyPerm(p.id, "reject")}>Deny</button>
                     </span>
                   </div>
                 ))}
@@ -1449,22 +1484,25 @@ export function App() {
                   {stream}
                   {pendTop.map(renderPending)}
                   {busy && (
-                    <div className="slack-msg compact" key="working">
+                    <div className="slack-msg compact live" key="working">
                       <div className="avatar-ghost" />
                       <div className="slack-body">
                         <span className="working-label">
-                          <span className="run-dot" />{activity}{elapsed ? ` · ${elapsed}` : ""}
+                          <span className="run-dot" style={meta?.color ? { background: meta.color } : undefined} />
+                          <span className="wl-bot">{activeBot}</span>
+                          <span className="wl-act">is {activity}</span>
+                          {elapsed && <span className="wl-clock">· {elapsed}</span>}
                         </span>
                       </div>
                     </div>
                   )}
                   {pendQueued.map(renderPending)}
                 </div>
-                <div style={{ width: "min(760px, 100%)", margin: "0 auto", padding: "0 24px 10px" }}>
+                <div className="composer-dock">
                   {composer}
                   {statusMsg && <div className="status-line">{statusMsg}</div>}
                 </div>
-                <div className="foot">{activeBot} runs on the background harness</div>
+                <div className="foot">{activeBot} keeps working while you're away</div>
               </>
             )}
           </>
@@ -1475,23 +1513,23 @@ export function App() {
         <div className="modal-veil" onClick={() => !creating && setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>New bot</h3>
-            <p>Say what it should do — the name is picked for you and can be changed later.</p>
+            <p>Describe what this bot should do. The name is chosen for you and can be changed later.</p>
             <label>What should it do?
               <textarea
                 autoFocus
                 rows={3}
                 value={modal.text}
                 onChange={(e) => setModal({ ...modal, text: e.target.value })}
-                placeholder="e.g. Review my code and explain things simply"
+                placeholder="e.g. Review my code in plain language"
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createBot(modal.text); } }}
               />
             </label>
-            <div className="hint">Leave it empty for a general-purpose helper.</div>
+            <div className="hint">Leave it empty for a general-purpose assistant.</div>
             {modal.err && <div className="err">{modal.err}</div>}
             <div className="row">
               <button className="btn-ghost" onClick={() => setModal(null)} disabled={creating}>Cancel</button>
               <button className="btn-primary" onClick={() => createBot(modal.text)} disabled={creating}>
-                {creating ? "Creating…" : "Create + chat"}
+                {creating ? "Creating…" : "Create and chat"}
               </button>
             </div>
           </div>
@@ -1524,6 +1562,16 @@ export function App() {
       {toolsOpen && (
         <ErrorBoundary key="tools" label="tools" onClose={() => setToolsOpen(false)}>
           <Tools onClose={() => setToolsOpen(false)} onChanged={() => { refreshCatalogs(); }} />
+        </ErrorBoundary>
+      )}
+
+      {settingsOpen && (
+        <ErrorBoundary key="settings" label="settings" onClose={() => setSettingsOpen(false)}>
+          <Settings
+            appearance={appearance}
+            onChange={setAppearance}
+            onClose={() => setSettingsOpen(false)}
+          />
         </ErrorBoundary>
       )}
 

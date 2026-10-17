@@ -10,6 +10,8 @@ import {
   Copy,
   ExternalLink,
   MessageCircle,
+  Monitor,
+  Moon,
   Package,
   Pencil,
   Plug,
@@ -21,6 +23,7 @@ import {
   Sparkles,
   Square,
   Store,
+  Sun,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -53,6 +56,9 @@ export const IconSparkle = w(Sparkles);
 export const IconChevronDown = w(ChevronDown);
 export const IconUser = w(User);
 export const IconBot = w(Bot);
+export const IconMonitor = w(Monitor);
+export const IconSun = w(Sun);
+export const IconMoon = w(Moon);
 export const IconTrash = w(Trash2);
 export const IconGear = w(Settings);
 export const IconPlug = w(Plug);

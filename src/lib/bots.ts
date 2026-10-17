@@ -41,6 +41,17 @@ export function normServer(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, "_");
 }
 
+/** Human-readable label for an MCP server status. */
+export function mcpStatusLabel(st: string): string {
+  const key = st.replace(/-/g, "_");
+  if (key === "connected") return "Connected";
+  if (key === "needs_auth") return "Sign-in needed";
+  if (key === "pending") return "Starting…";
+  if (key === "error") return "Error";
+  if (key === "disabled") return "Disabled";
+  return st;
+}
+
 /** A permission rule generated from the MCP picker (vs hand-written ones). */
 export function mcpRuleServer(rule: PermRule): string | null {
   const m = rule.action.match(/^(.+)_\*$/);
@@ -216,10 +227,10 @@ export async function listBots(): Promise<any[]> {
 /** Delete only the bot file (no reload/polling) — internal for rename. */
 async function removeBotFile(slug: string): Promise<void> {
   const ws = workspaceDir();
-  if (!ws) throw new Error("Workspace not connected — is the harness running?");
+  if (!ws) throw new Error("Workspace is not ready yet. Try again in a moment.");
   if (!slug || slug.includes("..")) throw new Error("Invalid bot name.");
   const abs = `${ws.replace(/\/$/, "")}/${BOTS_REL_DIR}/${slug}.md`;
-  if (!abs.startsWith(ws.replace(/\/$/, "") + "/")) throw new Error("Refusing to delete outside the bots dir.");
+  if (!abs.startsWith(ws.replace(/\/$/, "") + "/")) throw new Error("This bot cannot be deleted.");
   const quoted = `'${abs.replace(/'/g, `'\\''`)}'`;
   await (client as any).shell.create({
     location: { directory: ws },
@@ -289,10 +300,10 @@ export async function saveBot(
   prevName?: string,
 ): Promise<string> {
   const ws = workspaceDir();
-  if (!ws) throw new Error("Workspace not connected — is the harness running?");
+  if (!ws) throw new Error("Workspace is not ready yet. Try again in a moment.");
   await ensureLocation();
   const slug = slugify(d.name);
-  if (!slug) throw new Error("Bot name is empty after slugify");
+  if (!slug) throw new Error("Enter a valid bot name.");
   await (client as any).file.write({
     location: { directory: ws },
     path: `${BOTS_REL_DIR}/${slug}.md`,
@@ -316,13 +327,13 @@ export async function saveBot(
       if (all.some((a) => a.id === slug || a.id.endsWith(`/${slug}`))) return slug;
     } catch {}
   }
-  throw new Error(`saved ${slug}.md but it did not appear in /api/agent after 15s`);
+  throw new Error("The bot was created but did not appear in the list. Try again.");
 }
 
 /** No fs-delete route in the harness API — delete via its shell API instead. */
 export async function deleteBot(name: string): Promise<void> {
   const ws = workspaceDir();
-  if (!ws) throw new Error("Workspace not connected — is the harness running?");
+  if (!ws) throw new Error("Workspace is not ready yet. Try again in a moment.");
   const slug = slugify(name);
   if (!slug || slug.includes("..")) throw new Error("Invalid bot name.");
   await removeBotFile(slug);
@@ -332,11 +343,11 @@ export async function deleteBot(name: string): Promise<void> {
     await new Promise((r) => setTimeout(r, 500));
     if ((await readBotFile(slug)) == null) return;
   }
-  throw new Error("File still exists after delete — check harness shell permissions.");
+  throw new Error("The bot could not be removed completely. Try again.");
 }
 export async function setBotDisabled(name: string, disabled: boolean): Promise<void> {
   const src = await readBotFile(name);
-  if (src == null) throw new Error(`bot file not found: ${name}`);
+  if (src == null) throw new Error("This bot was not found.");
   const { known, unknownLines, system } = parseBotFile(src);
   await saveBot(
     {

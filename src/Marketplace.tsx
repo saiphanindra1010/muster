@@ -22,6 +22,7 @@ import {
   IconWrench,
   IconX,
 } from "./icons";
+import { useEscape } from "./lib/useEscape";
 
 const KIND_LABEL: Record<MarketKind, string> = { mcp: "Connector", plugin: "Plugin", skill: "Skill" };
 
@@ -64,6 +65,8 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
   const [confirm, setConfirm] = useState<string | null>(null);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [custom, setCustom] = useState("");
+
+  useEscape(onClose);
 
   const refresh = async () => {
     const r = await loadMarket();
@@ -112,7 +115,7 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
       const catalogMcp = new Set(items.filter((i) => i.kind === "mcp").map((i) => i.id));
       for (const name of cfg.mcpServers) {
         if (!catalogMcp.has(name)) {
-          extra.push({ id: name, kind: "mcp", name, description: "Connected outside the marketplace." });
+          extra.push({ id: name, kind: "mcp", name, description: "Connected from the workspace." });
         }
       }
       const catalogPkgs = new Set(items.filter((i) => i.plugin).map((i) => i.plugin!.package));
@@ -123,7 +126,7 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
       if (state) {
         for (const s of state.skills) {
           if (!catalogSkill.has(s)) {
-            extra.push({ id: s, kind: "skill", name: s, description: "Skill in the workspace." });
+            extra.push({ id: s, kind: "skill", name: s, description: "Workspace skill." });
           }
         }
       }
@@ -221,11 +224,10 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
         {tok && !inst && tok.help && <div className="mkt-note">{tok.help}</div>}
         {item.mcp?.signin && inst && mcpSt?.status === "needs_auth" && (
           <div className="mkt-note">
-            Finish OAuth sign-in from OpenCode: <code>/mcps</code> → {item.id} (or{" "}
-            <code>opencode mcp auth {item.id}</code>).
+            This tool needs a one-time sign-in. Open <b>Tools</b> in the sidebar and choose <b>Connect</b> to continue.
           </div>
         )}
-        {(item.requires?.length ?? 0) > 0 && !inst && <div className="mkt-note">Needs {item.requires!.join(", ")}</div>}
+        {(item.requires?.length ?? 0) > 0 && !inst && <div className="mkt-note">Requires {item.requires!.join(", ")}</div>}
         {(item.tags?.length ?? 0) > 0 && (
           <div className="mkt-foot">
             {item.tags!.map((t) => (
@@ -252,7 +254,7 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
           </button>
         </div>
         <p className="mkt-sub">
-          Connectors, plugins and skills for your bots — one click to install, stored in your workspace.
+          Connectors, plugins and skills for your bots. One click to install — everything is stored in your workspace.
         </p>
         <div className="mkt-bar">
           <span className="mkt-search">
@@ -270,16 +272,16 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
         <div className="mkt-grid">
           {!cfg && <div className="hint">Loading…</div>}
           {cfg && visible.map((i) => <Card key={`${i.kind}:${i.id}`} item={i} />)}
-          {cfg && visible.length === 0 && <div className="hint">Nothing matches.</div>}
+          {cfg && visible.length === 0 && <div className="hint">No matches.</div>}
           {cfg && tab !== "skill" && tab !== "mcp" && (
             <div className="mkt-custom">
               <span className="mkt-note" style={{ flex: 1 }}>
-                Add any npm plugin by name
+                Install any npm plugin by name
               </span>
               <input
                 value={custom}
                 onChange={(e) => setCustom(e.target.value)}
-                placeholder="opencode-plugin-name"
+                placeholder="npm package name"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && custom.trim()) {
                     run(custom.trim(), () => installItem(customPluginItem(custom.trim())));

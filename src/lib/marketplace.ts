@@ -72,7 +72,7 @@ export function customPluginItem(pkg: string): MarketItem {
 
 function wsDir(): string {
   const w = workspaceDir();
-  if (!w) throw new Error("Workspace not connected — is the harness running?");
+  if (!w) throw new Error("Workspace is not ready yet. Try again in a moment.");
   return w;
 }
 function loc(): { directory: string } {
@@ -174,7 +174,7 @@ export function isInstalled(cfg: ConfigView, state: MarketState, item: MarketIte
 /* --------------------------------- install --------------------------------- */
 
 export async function installMcpServer(name: string, config: Record<string, any>): Promise<void> {
-  if (!name.trim()) throw new Error("Server name is empty");
+  if (!name.trim()) throw new Error("Enter a server name.");
   const conf: Record<string, any> = JSON.parse(JSON.stringify(config));
   await writeConfigText(upsertDeep(await readConfigText(), ["mcp", "servers"], name, conf));
   await waitForMcp(name, 15000);
@@ -192,14 +192,14 @@ async function waitForMcp(name: string, ms: number): Promise<void> {
   for (;;) {
     const list = await listMcp();
     if (list.some((s: any) => s.name === name)) return;
-    if (Date.now() > until) throw new Error(`"${name}" did not appear — check the URL or command`);
+    if (Date.now() > until) throw new Error(`“${name}” did not start — check the URL or command`);
     await sleep(1200);
   }
 }
 
 export async function installPluginPackage(pkg: string): Promise<void> {
   if (!/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(@[\w.-]+)?$/i.test(pkg)) {
-    throw new Error(`"${pkg}" is not a valid npm package name`);
+    throw new Error(`“${pkg}” is not a valid npm package name`);
   }
   await writeConfigText(upsertArrayEntry(await readConfigText(), "plugins", pkg));
 }
@@ -210,7 +210,7 @@ export async function uninstallPluginPackage(pkg: string): Promise<void> {
 
 export async function installSkill(id: string): Promise<void> {
   const body = SKILL_BODIES[id];
-  if (!body) throw new Error(`No content bundled for skill "${id}"`);
+  if (!body) throw new Error(`Skill “${id}” has no installable content.`);
   await (client as any).file.write({
     location: loc(),
     path: `.opencode/skills/${id}/SKILL.md`,
@@ -227,7 +227,7 @@ export async function installSkill(id: string): Promise<void> {
 }
 
 export async function uninstallSkill(id: string): Promise<void> {
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error("Invalid skill id");
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error("Enter a valid skill name (lowercase letters, digits, dashes).");
   const dir = `${wsDir().replace(/\/$/, "")}/.opencode/skills/${id}`;
   await (client as any).shell.create({ location: loc(), command: `rm -rf '${dir.replace(/'/g, `'\\''`)}'` });
   await (client as any).location.reload();
