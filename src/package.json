@@ -12,7 +12,9 @@
     "@dicebear/core": "^9.4.3",
     "@opencode/client": "latest",
     "@tauri-apps/api": "^2.12.3",
+    "dompurify": "^3.4.17",
     "lucide-react": "^1.56.0",
+    "marked": "^18.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

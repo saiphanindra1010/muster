@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
 import { chatHasStaleSkillMarker, createBotFromPrompt, listBots, listDisabledBots, listMcp, upgradeBotPersonas } from "./lib/bots";
 import {
@@ -62,24 +64,43 @@ function mcpRefs(part: any): string[] {
   return [...(calls.size ? calls : servers)].slice(0, 6);
 }
 
-/** Tiny dependency-free markdown-lite: code fences, inline code, bold, paragraphs. */
-export function mdLite(src: string): string {
-  const esc = src.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const blocks: string[] = [];
-  const fenced = esc.replace(/```(\w*)\n([\s\S]*?)(```|$)/g, (_, lang, code) => {
-    blocks.push(`<pre><code>${code.replace(/^\n|\n$/g, "")}</code></pre>`);
-    return `\u0000${blocks.length - 1}\u0000`;
-  });
-  return fenced
-    .split(/\n{2,}/)
-    .map((para) =>
-      para
-        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/\n/g, "<br/>"),
-    )
-    .join("<br/><br/>")
-    .replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[Number(i)] ?? "");
+marked.use({ gfm: true, breaks: true });
+
+// Post-processing for sanitized chat HTML: links open outside the app, and
+// tables get a scroll wrapper so wide job tables can't break the column.
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if ((node as Element).tagName === "A") {
+    (node as Element).setAttribute("target", "_blank");
+    (node as Element).setAttribute("rel", "noreferrer noopener");
+  }
+});
+DOMPurify.addHook("afterSanitizeElements", (node) => {
+  const el = node as Element;
+  if (el.tagName !== "TABLE") return;
+  const parent = el.parentNode as HTMLElement | null;
+  if (!parent || parent.classList?.contains("md-table")) return;
+  const wrap = (el.ownerDocument ?? document).createElement("div");
+  wrap.className = "md-table";
+  parent.insertBefore(wrap, el);
+  wrap.appendChild(el);
+});
+
+/** Parse cache — streaming re-renders the same text on every delta. */
+const mdCache = new Map<string, string>();
+
+/** Markdown → sanitized HTML (full GFM: tables, lists, links, quotes, code). */
+export function renderMarkdown(src: string): string {
+  const hit = mdCache.get(src);
+  if (hit !== undefined) return hit;
+  let html: string;
+  try {
+    html = DOMPurify.sanitize(marked.parse(src, { async: false }) as string);
+  } catch {
+    html = src.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>");
+  }
+  if (mdCache.size > 300) mdCache.clear();
+  mdCache.set(src, html);
+  return html;
 }
 
 function fmtTime(ts?: number): string {
@@ -439,7 +460,11 @@ export function App() {
     const wasBusy = !!busyRef.current[id!];
     setMsgs((m) => [...m, { role: "user", text: t, key: Date.now().toString(), time: Date.now() }]);
     setInput("");
-    requestAnimationFrame(autogrow);
+    requestAnimationFrame(() => {
+      autogrow();
+      const el = threadRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
     if (!wasBusy) setSessionBusy(id!, true);
     armWatchdog(id!);
     try {
@@ -656,8 +681,16 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Stick to the bottom while streaming — but only when already near it, so
+  // reading back through history doesn't get yanked down by every poll.
+  const lastScrollSession = useRef<string | null>(null);
   useEffect(() => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
+    const el = threadRef.current;
+    if (!el) return;
+    const switched = lastScrollSession.current !== activeID;
+    lastScrollSession.current = activeID;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    if (switched || nearBottom) el.scrollTop = el.scrollHeight;
   }, [msgs, busySessions, activeID]);
 
   const busy = !!(activeID && busySessions[activeID]);
@@ -765,8 +798,8 @@ export function App() {
             </div>
           )}
           {m.role === "user"
-            ? <div className="slack-text">{m.text}</div>
-            : <div className="slack-text" dangerouslySetInnerHTML={{ __html: mdLite(m.text) }} />}
+            ? <div className="slack-text plain">{m.text}</div>
+            : <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />}
           {m.role === "assistant" && (
             <div className="msg-actions">
               <button onClick={() => copy(m.text, m.key)} title="Copy">{votes[`c:${m.key}`] ? <IconCheck size={14} /> : <IconCopy size={14} />}</button>
@@ -1008,7 +1041,7 @@ export function App() {
                           <strong>{liveSender.name}</strong>
                           <span className="time">now</span>
                         </div>
-                        <div className="slack-text" dangerouslySetInnerHTML={{ __html: mdLite(text) }} />
+                        <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
                       </div>
                     </div>
                   ))}

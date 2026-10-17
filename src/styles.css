@@ -206,6 +206,30 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 }
 .slack-text code { background: var(--panel-2); border-radius: 6px; padding: 1px 6px; font-size: 12.5px; }
 .slack-text pre code { background: none; padding: 0; }
+.slack-text.plain { white-space: pre-wrap; }
+.slack-text > :first-child { margin-top: 0; }
+.slack-text > :last-child { margin-bottom: 0; }
+.slack-text p { margin: 6px 0; }
+.slack-text h1, .slack-text h2, .slack-text h3, .slack-text h4 { margin: 14px 0 6px; line-height: 1.3; font-weight: 650; }
+.slack-text h1 { font-size: 17px; }
+.slack-text h2 { font-size: 15.5px; }
+.slack-text h3, .slack-text h4 { font-size: 14.5px; }
+.slack-text ul, .slack-text ol { margin: 6px 0; padding-left: 22px; }
+.slack-text li { margin: 3px 0; }
+.slack-text li p { margin: 0; }
+.slack-text a { color: #9ecbff; text-decoration: none; border-bottom: 1px solid rgba(158, 203, 255, 0.35); }
+.slack-text a:hover { border-bottom-color: #9ecbff; }
+.slack-text blockquote { margin: 8px 0; padding: 2px 14px; border-left: 3px solid var(--line-soft); color: var(--dim); }
+.slack-text hr { border: none; border-top: 1px solid var(--line-soft); margin: 12px 0; }
+.slack-text .md-table { overflow-x: auto; margin: 8px 0; border: 1px solid var(--line-soft); border-radius: 10px; }
+.slack-text table { border-collapse: collapse; font-size: 13.5px; min-width: 100%; }
+.slack-text th, .slack-text td { border-top: 1px solid var(--line-soft); border-right: 1px solid var(--line-soft); padding: 6px 11px; text-align: left; vertical-align: top; }
+.slack-text th:last-child, .slack-text td:last-child { border-right: none; }
+.slack-text tr:first-child th { border-top: none; }
+.slack-text th { background: var(--panel-2); font-weight: 600; white-space: nowrap; }
+.slack-text tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
+.slack-text del { color: var(--dim); }
+.slack-text img { max-width: 100%; border-radius: 10px; }
 .avatar-ghost { width: 32px; flex-shrink: 0; font-size: 10px; color: var(--faint); text-align: center; padding-top: 4px; opacity: 0; }
 .slack-msg:hover .avatar-ghost { opacity: 1; }
 .tool-line { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--dim); }
