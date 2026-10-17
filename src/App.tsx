@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import type { McpServer, PermissionRequest, V2Event } from "@opencode/client";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
 import { chatHasStaleSkillMarker, createBotFromPrompt, listBots, listDisabledBots, listMcp, mcpStatusLabel, upgradeBotPersonas } from "./lib/bots";
 import { useEscape } from "./lib/useEscape";
@@ -71,12 +72,16 @@ const CATALOG_EVENTS = new Set([
 /** Where a tool call actually goes: MCP calls bots make from execute code
  * (`tools["agent-browser"].agent_browser_open(...)`). Rendered as chips on the
  * tool line so it's visible which connector a call is routed to. */
-function mcpRefs(part: any): string[] {
-  const input = part?.input ?? part?.args ?? part?.state?.input;
+function mcpRefs(rawInput: unknown): string[] {
   let code = "";
-  if (typeof input?.code === "string") code = input.code;
-  else if (typeof input === "string") code = input;
-  else if (input) { try { code = JSON.stringify(input); } catch {} }
+  if (typeof rawInput === "string") code = rawInput;
+  else if (rawInput && typeof rawInput === "object") {
+    const input = rawInput as { code?: unknown };
+    if (typeof input.code === "string") code = input.code;
+    else {
+      try { code = JSON.stringify(rawInput) ?? ""; } catch {}
+    }
+  }
   const calls = new Set<string>();
   const servers = new Set<string>();
   for (const m of code.matchAll(/tools\s*\[\s*["'`]([^"'`\n]+)["'`]\s*\]\s*\.\s*([A-Za-z0-9_-]+)/g)) calls.add(`${m[1]}.${m[2]}`);
@@ -109,14 +114,15 @@ function toolPhrase(name: string, refs: string[]): string {
 /** Short, human-readable hint for a tool's input — never dumps raw JSON.
  *  `execute`/`bash` scripts are the worst spam offenders, so they get a
  *  one-line hint (or nothing when the MCP chips already say enough). */
-function toolDetail(name: string, input: any, refs: string[]): string {
+function toolDetail(name: string, input: unknown, refs: string[]): string {
   if (refs.length || input == null) return "";
+  const rec = typeof input === "object" ? (input as Record<string, unknown>) : {};
   if (name === "write" || name === "edit" || name === "read" || name === "patch") {
-    const p = input.filePath ?? input.path ?? input.filename;
+    const p = rec.filePath ?? rec.path ?? rec.filename;
     if (typeof p === "string" && p) return ` ${p}`;
   }
   if (name === "execute" || name === "bash") {
-    const code = typeof input === "string" ? input : input?.code ?? input?.command ?? "";
+    const code = typeof input === "string" ? input : rec.code ?? rec.command ?? "";
     const line = String(code).split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#!"));
     if (!line) return "";
     const clean = line.replace(/^(\/\/|#)\s?/, "").replace(/\s+/g, " ");
@@ -126,12 +132,6 @@ function toolDetail(name: string, input: any, refs: string[]): string {
   try { j = JSON.stringify(input) ?? ""; } catch {}
   if (!j || j === "{}") return "";
   return ` ${j.slice(0, 72)}${j.length > 72 ? "…" : ""}`;
-}
-
-/** Live tool line text — same shape as the stored thread's tool lines. */
-function toolLine(name: string, input: any): { text: string; refs: string[] } {
-  const refs = mcpRefs({ input });
-  return { text: `${name}${toolDetail(name, input, refs)}`, refs };
 }
 
 marked.use({ gfm: true, breaks: true });
@@ -205,7 +205,7 @@ export function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [bots, setBots] = useState<BotMeta[]>([]);
   const [disabledBots, setDisabledBots] = useState<Array<{ id: string; color?: string; description?: string }>>([]);
-  const [tools, setTools] = useState<any[]>([]);
+  const [tools, setTools] = useState<McpServer[]>([]);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [marketOpen, setMarketOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -217,7 +217,7 @@ export function App() {
   const [models, setModels] = useState<ModelOpt[]>([]);
   const [modelsBySession, setModelsBySession] = useState<Record<string, string>>({});
   const [busySessions, setBusySessions] = useState<Record<string, boolean>>({});
-  const [perms, setPerms] = useState<any[]>([]);
+  const [perms, setPerms] = useState<PermissionRequest[]>([]);
   const [votes, setVotes] = useState<Record<string, 1 | -1>>({});
   const [harnessOk, setHarnessOk] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
@@ -232,8 +232,8 @@ export function App() {
   const [newBotText, setNewBotText] = useState("");
   const [creating, setCreating] = useState(false);
   const [settingsBot, setSettingsBot] = useState<string | null>(null);
-  const statusTimer = useRef<any>(null);
-  const watchdogs = useRef<Record<string, any>>({});
+  const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const watchdogs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const busyRef = useRef<Record<string, boolean>>({});
   /** When each session's current turn started — powers the elapsed clock. */
   const turns = useRef<Record<string, number>>({});
@@ -385,13 +385,12 @@ export function App() {
 
   const refreshSessions = async () => {
     try {
-      const r: any = await client.session.list();
-      const list: any[] = r?.data ?? r?.sessions ?? r ?? [];
+      const r = await client.session.list();
       setSessions(
-        list.map((s: any) => ({
-          id: s.id ?? s.ID,
-          kind: s.metadata?.kind,
-          bot: s.metadata?.bot,
+        r.data.map((s) => ({
+          id: s.id,
+          kind: typeof s.metadata?.kind === "string" ? s.metadata.kind : undefined,
+          bot: typeof s.metadata?.bot === "string" ? s.metadata.bot : undefined,
         })),
       );
       setHarnessOk(true);
@@ -403,17 +402,16 @@ export function App() {
 
   const refreshCatalogs = async () => {
     try {
-      const m: any = await client.model.list();
-      const data: any[] = m?.data ?? m?.models ?? m ?? [];
+      const m = await client.model.list();
       setModels(
-        data
-          .filter((x) => x?.providerID && (x?.modelID ?? x?.id))
-          .map((x) => ({ key: `${x.providerID}/${x.modelID ?? x.id}`, providerID: x.providerID, id: x.modelID ?? x.id })),
+        m.data
+          .filter((x) => x.providerID && x.modelID)
+          .map((x) => ({ key: `${x.providerID}/${x.modelID}`, providerID: x.providerID, id: x.modelID })),
       );
     } catch {}
     try {
-      const bl: any[] = await listBots();
-      setBots(bl.map((b: any) => ({
+      const bl = await listBots();
+      setBots(bl.map((b) => ({
         id: b.id, color: b.botColor || b.color, description: b.description,
       })));
     } catch {}
@@ -462,36 +460,32 @@ export function App() {
 
   const loadThread = async (id: string) => {
     try {
-      const r: any = await client.message.list({ sessionID: id });
-      const all: any[] = r?.data ?? r?.messages ?? r ?? [];
+      const r = await client.message.list({ sessionID: id });
       // The harness returns newest-first; chats read oldest-first.
-      const ordered = all
-        .map((m, i) => ({ m, t: m?.time?.created ?? 0, i }))
+      const ordered = r.data
+        .map((m, i) => ({ m, t: m.time.created, i }))
         .sort((a, b) => a.t - b.t || a.i - b.i)
         .map((x) => x.m);
       const out: ChatMsg[] = [];
       for (const m of ordered) {
         if (m.type === "user" && m.text) {
-          out.push({ role: "user", text: m.text, key: m.id ?? Math.random().toString(), time: m.time?.created });
+          out.push({ role: "user", text: m.text, key: m.id ?? Math.random().toString(), time: m.time.created });
         } else if (m.type === "assistant") {
-          for (const p of m.content ?? []) {
-            if (p.type === "text" && p.text) out.push({ role: "assistant", text: p.text, key: p.id ?? `${m.id}-${out.length}`, time: m.time?.created ?? m.time?.streamed, agent: m.agent });
+          for (const p of m.content) {
+            if (p.type === "text" && p.text) out.push({ role: "assistant", text: p.text, key: `${m.id}-${out.length}`, time: m.time.created, agent: m.agent });
             // NOTE: reasoning parts are the model's internal chain-of-thought —
             // deliberately not rendered. Only final text + tool activity show.
             else if (p.type === "tool") {
-              const name = p.name ?? p.tool ?? "tool";
-              const refs = mcpRefs(p);
-              const input = p.input ?? p.args ?? p.state?.input;
-              const st = p.state?.status;
+              const refs = mcpRefs(p.state.input);
               out.push({
                 role: "tool",
-                text: `${name}${toolDetail(name, input, refs)}`,
+                text: `${p.name}${toolDetail(p.name, p.state.input, refs)}`,
                 key: p.id ?? `${m.id}-${out.length}`,
-                time: m.time?.created,
+                time: m.time.created,
                 agent: m.agent,
                 mcps: refs,
-                tool: name,
-                err: st === "error" || st === "failed",
+                tool: p.name,
+                err: p.state.status === "error",
               });
             }
           }
@@ -533,8 +527,7 @@ export function App() {
 
   const loadPerms = async (id: string) => {
     try {
-      const r: any = await (client as any).permission.list({ sessionID: id });
-      const list: any[] = r?.data ?? r ?? [];
+      const list = await client.permission.list({ sessionID: id });
       if (id === activeIDRef.current) setPerms(list);
       syncNeedsYou(id, list.length > 0);
     } catch {
@@ -546,7 +539,7 @@ export function App() {
     const id = activeIDRef.current;
     if (!id) return;
     try {
-      await (client as any).permission.reply({ sessionID: id, requestID, decision });
+      await client.permission.reply({ sessionID: id, requestID, decision });
       loadPerms(id);
     } catch (e) {
       say(`Could not send your reply: ${(e as Error).message}`);
@@ -555,8 +548,8 @@ export function App() {
 
   const syncSessionModel = async (id: string) => {
     try {
-      const s: any = await client.session.get({ sessionID: id });
-      const mm = s?.model ?? s?.data?.model;
+      const s = await client.session.get({ sessionID: id });
+      const mm = s.model;
       if (mm?.providerID && mm?.id) {
         setModelsBySession((prev) => ({ ...prev, [id]: `${mm.providerID}/${mm.id}` }));
       }
@@ -573,10 +566,10 @@ export function App() {
       // the chat (kept in the DB as dm-archived) and give the bot a fresh,
       // quiet one.
       try {
-        await (client as any).session.update({
+        await client.session.update({
           sessionID: existing.id,
           metadata: { kind: "dm-archived", bot: botID },
-        } as any);
+        });
       } catch {}
       existing = undefined;
       refreshSessions();
@@ -593,12 +586,12 @@ export function App() {
       return;
     }
     try {
-      const s: any = await client.session.create({
+      const s = await client.session.create({
         location: sessionLocation(),
         agent: botID,
         title: botID,
         metadata: { kind: "dm", bot: botID },
-      } as any);
+      });
       setActiveSession(s.id, botID);
       setMsgs([]);
       setPerms([]);
@@ -639,11 +632,11 @@ export function App() {
     let id = activeIDRef.current;
     if (!id) {
       try {
-        const s: any = await client.session.create({
+        const s = await client.session.create({
           location: sessionLocation(),
           agent: activeBot,
           metadata: { kind: "dm", bot: activeBot },
-        } as any);
+        });
         id = s.id;
         setActiveSession(id, activeBot);
         refreshSessions();
@@ -670,9 +663,9 @@ export function App() {
     try {
       // The harness queues prompts sent mid-turn (inbox), so sending while
       // busy is safe — it runs right after the current turn.
-      const res: any = await client.session.prompt({ sessionID: id!, text: t } as any);
-      const inboxID: string | undefined = res?.id ?? res?.data?.id;
-      const queued: boolean = (res?.delivery ?? res?.data?.delivery) === "queue" || wasBusy;
+      const res = await client.session.prompt({ sessionID: id!, text: t });
+      const inboxID = res.id;
+      const queued = res.delivery === "queue" || wasBusy;
       if (inboxID) {
         replacePending((p) => {
           const list = p[id!];
@@ -749,8 +742,8 @@ export function App() {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     /** Fill chips/hint on a live tool line once its input is known. */
-    const applyToolInput = (sid: string, id: string, raw: any) => {
-      let input = raw;
+    const applyToolInput = (sid: string, id: string, raw: string | Record<string, unknown> | undefined) => {
+      let input: unknown = raw;
       if (typeof raw === "string") {
         try { input = JSON.parse(raw); } catch { input = undefined; }
       }
@@ -759,7 +752,7 @@ export function App() {
         const i = list.findIndex((x) => x.kind === "tool" && x.key === id);
         if (i === -1) return list;
         const cur = list[i] as Extract<LiveEntry, { kind: "tool" }>;
-        const refs = mcpRefs({ input });
+        const refs = mcpRefs(input);
         const text = `${cur.name}${toolDetail(cur.name, input, refs)}`;
         if (refs.join(" ") === cur.refs.join(" ") && text === cur.text) return list;
         const n = list.slice();
@@ -768,31 +761,37 @@ export function App() {
       });
     };
 
-    const handleEvent = (e: any) => {
-      const t: string = e.type ?? "";
-      const d: any = e.data ?? {};
-      const sid: string = d.sessionID ?? "";
-      if (sid && ACTIVITY_EVENTS.has(t)) armWatchdog(sid);
+    /** sessionID of any wire event that carries one (some event families
+     *  carry a different payload — those never arm the watchdog). */
+    const eventSessionID = (e: V2Event): string => {
+      if (!("data" in e)) return "";
+      const d = e.data as { sessionID?: unknown };
+      return typeof d.sessionID === "string" ? d.sessionID : "";
+    };
+
+    const handleEvent = (e: V2Event) => {
+      const sid = eventSessionID(e);
+      if (sid && ACTIVITY_EVENTS.has(e.type)) armWatchdog(sid);
       const isActive = () => sid === activeIDRef.current;
-      switch (t) {
-        case "session.execution.started":
-          if (sid) {
-            turns.current[sid] = Date.now();
-            setSessionBusy(sid, true);
-            armWatchdog(sid);
-            if (isActive()) {
-              // New turn: the stored thread is authoritative up to now.
-              dropFeed(sid);
-              loadThread(sid);
-            }
+      switch (e.type) {
+        case "session.execution.started": {
+          if (!sid) break;
+          turns.current[sid] = Date.now();
+          setSessionBusy(sid, true);
+          armWatchdog(sid);
+          if (isActive()) {
+            // New turn: the stored thread is authoritative up to now.
+            dropFeed(sid);
+            loadThread(sid);
           }
           break;
+        }
         case "session.execution.succeeded":
         case "session.execution.failed":
         case "session.execution.interrupted":
         case "session.idle": {
           if (!sid) break;
-          if (t === "session.execution.failed" && isActive()) say("The turn did not complete — see the thread for details.");
+          if (e.type === "session.execution.failed" && isActive()) say("The turn did not complete — see the thread for details.");
           clearWatchdog(sid);
           delete turns.current[sid];
           setSessionBusy(sid, false);
@@ -828,35 +827,38 @@ export function App() {
           refreshSessions();
           break;
         }
-        case "session.text.delta":
-          if (isActive() && d.assistantMessageID && d.delta) {
-            const key = `${d.assistantMessageID}:${d.ordinal ?? 0}`;
+        case "session.text.delta": {
+          const d = e.data;
+          if (isActive() && d.delta) {
+            const key = `${d.assistantMessageID}:${d.ordinal}`;
             mutFeed(sid, (list) => {
               const i = list.findIndex((x) => x.key === key);
-              if (i === -1) return [...list, { kind: "text", key, text: String(d.delta) }];
+              if (i === -1) return [...list, { kind: "text", key, text: d.delta }];
               const n = list.slice();
               n[i] = { kind: "text", key, text: (list[i] as Extract<LiveEntry, { kind: "text" }>).text + d.delta };
               return n;
             });
           }
           break;
+        }
         case "session.text.ended": {
           if (!isActive()) break;
-          const key = `${d.assistantMessageID ?? "m"}:${d.ordinal ?? 0}`;
-          const text = String(d.text ?? "");
+          const d = e.data;
+          const key = `${d.assistantMessageID}:${d.ordinal}`;
           mutFeed(sid, (list) => {
             const i = list.findIndex((x) => x.key === key);
-            if (i === -1) return text ? [...list, { kind: "text", key, text }] : list;
+            if (i === -1) return d.text ? [...list, { kind: "text", key, text: d.text }] : list;
             const n = list.slice();
-            n[i] = { kind: "text", key, text: text || (list[i] as Extract<LiveEntry, { kind: "text" }>).text };
+            n[i] = { kind: "text", key, text: d.text || (list[i] as Extract<LiveEntry, { kind: "text" }>).text };
             return n;
           });
           break;
         }
-        case "session.tool.input.started":
-          if (isActive() && d.id) {
-            const key = d.id as string;
-            const name: string = d.name ?? "tool";
+        case "session.tool.input.started": {
+          const d = e.data;
+          if (isActive()) {
+            const key = d.id;
+            const name = d.name;
             mutFeed(sid, (list) =>
               list.some((x) => x.kind === "tool" && x.key === key)
                 ? list
@@ -864,17 +866,23 @@ export function App() {
             );
           }
           break;
-        case "session.tool.input.ended":
-          if (isActive() && d.id) applyToolInput(sid, d.id, d.text);
+        }
+        case "session.tool.input.ended": {
+          const d = e.data;
+          if (isActive()) applyToolInput(sid, d.id, d.text);
           break;
-        case "session.tool.called":
-          if (isActive() && d.id) applyToolInput(sid, d.id, d.input);
+        }
+        case "session.tool.called": {
+          const d = e.data;
+          if (isActive()) applyToolInput(sid, d.id, d.input);
           break;
+        }
         case "session.tool.success":
-        case "session.tool.failed":
-          if (isActive() && d.id) {
-            const key = d.id as string;
-            const state: "done" | "error" = t === "session.tool.failed" ? "error" : "done";
+        case "session.tool.failed": {
+          const d = e.data;
+          if (isActive()) {
+            const key = d.id;
+            const state: "done" | "error" = e.type === "session.tool.failed" ? "error" : "done";
             mutFeed(sid, (list) => {
               const i = list.findIndex((x) => x.kind === "tool" && x.key === key);
               if (i === -1) return list;
@@ -884,35 +892,35 @@ export function App() {
             });
           }
           break;
+        }
         case "session.inbox.delivered": {
           // The prompt left the queue and joined the conversation — fold its
           // bubble in now (no reload: the in-flight assistant message would
           // race the live feed).
-          const inboxID: string | undefined = d.inboxID;
-          if (!inboxID) break;
+          const inboxID = e.data.inboxID;
           deliveredInbox.current.add(inboxID);
           if (!foldDelivered(sid, inboxID) && deliveredInbox.current.size > 500) deliveredInbox.current.clear();
           break;
         }
-        case "session.inbox.cancelled":
-          if (d.inboxID) {
-            deliveredInbox.current.delete(d.inboxID);
-            replacePending((p) => {
-              let changed = false;
-              const n: Record<string, ChatMsg[]> = { ...p };
-              for (const k of Object.keys(n)) {
-                const kept = n[k].filter((x) => x.inboxID !== d.inboxID);
-                if (kept.length !== n[k].length) {
-                  changed = true;
-                  if (kept.length) n[k] = kept;
-                  else delete n[k];
-                }
+        case "session.inbox.cancelled": {
+          const inboxID = e.data.inboxID;
+          deliveredInbox.current.delete(inboxID);
+          replacePending((p) => {
+            let changed = false;
+            const n: Record<string, ChatMsg[]> = { ...p };
+            for (const k of Object.keys(n)) {
+              const kept = n[k].filter((x) => x.inboxID !== inboxID);
+              if (kept.length !== n[k].length) {
+                changed = true;
+                if (kept.length) n[k] = kept;
+                else delete n[k];
               }
-              return changed ? n : p;
-            });
-            if (isActive()) say("Queued message cancelled.");
-          }
+            }
+            return changed ? n : p;
+          });
+          if (isActive()) say("Queued message cancelled.");
           break;
+        }
         case "permission.asked":
         case "permission.replied":
           // Keep the whole team's "needs you" state accurate, not just the
@@ -924,7 +932,7 @@ export function App() {
           refreshSessions();
           break;
         default:
-          if (CATALOG_EVENTS.has(t)) refreshCatalogs();
+          if (CATALOG_EVENTS.has(e.type)) refreshCatalogs();
       }
     };
 
@@ -949,7 +957,8 @@ export function App() {
               const line = f.split("\n").find((l) => l.startsWith("data:"));
               if (!line) continue;
               try {
-                handleEvent(JSON.parse(line.slice(5).trim()));
+                // Wire boundary: SSE frames are JSON of the SDK's event union.
+                handleEvent(JSON.parse(line.slice(5).trim()) as V2Event);
               } catch {}
             }
           }
@@ -973,15 +982,14 @@ export function App() {
     /** Boot: surface pre-existing "waiting on you" states across the team. */
     const seedStatuses = async () => {
       try {
-        const r: any = await client.session.list();
-        const list: any[] = r?.data ?? [];
-        for (const s of list) {
-          if (s?.metadata?.kind !== "dm") continue;
+        const r = await client.session.list();
+        for (const s of r.data) {
+          if (s.metadata?.kind !== "dm") continue;
           loadPerms(s.id);
           // Mid-turn heuristic: activity after the last idle marker means the
           // bot was working when the UI last went away.
-          const t = s.time ?? {};
-          if (t.updated && t.idle && t.updated > t.idle) {
+          const t = s.time;
+          if (t.idle && t.updated > t.idle) {
             setSessionBusy(s.id, true);
             armWatchdog(s.id);
           }
@@ -1362,9 +1370,9 @@ export function App() {
             </button>
           </div>
           <ul>
-            {tools.map((t: any) => {
-              const st = typeof t.status === "string" ? t.status : t.status?.status ?? "?";
-              const col = st === "connected" ? "var(--green)" : st === "needs_auth" || st === "needs-auth" || st === "pending" ? "var(--amber)" : "var(--red)";
+            {tools.map((t) => {
+              const st = t.status.status;
+              const col = st === "connected" ? "var(--green)" : st === "needs_auth" || st === "pending" ? "var(--amber)" : "var(--red)";
               return (
                 <li key={t.name}>
                   <button className="bot-row" onClick={() => setToolsOpen(true)} title={`${t.name} — ${mcpStatusLabel(st)}`}>
@@ -1453,7 +1461,7 @@ export function App() {
             </div>
             {perms.length > 0 && (
               <div className="perm">
-                {perms.map((p: any) => (
+                {perms.map((p) => (
                   <div key={p.id} className="perm-row">
                     <span><strong>{activeBot}</strong> wants to {permVerb(p.action)}{p.resources?.length ? `: ${p.resources.join(" ")}` : ""}{p.message ? ` — ${p.message}` : ""}</span>
                     <span className="acts">

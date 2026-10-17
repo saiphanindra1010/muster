@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { McpServer, SkillInfo } from "@opencode/client";
 import {
   deleteBot,
   listMcp,
@@ -33,8 +34,8 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
   const [draft, setDraft] = useState<BotDraft | null>(null);
   const [unknown, setUnknown] = useState<string[]>([]);
   const [rules, setRules] = useState<PermRule[]>([]);
-  const [allSkills, setAllSkills] = useState<any[]>([]);
-  const [allMcp, setAllMcp] = useState<any[]>([]);
+  const [allSkills, setAllSkills] = useState<SkillInfo[]>([]);
+  const [allMcp, setAllMcp] = useState<McpServer[]>([]);
   const [status, setStatus] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const ws = workspaceDir();
@@ -159,9 +160,9 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
                   </div>
                 )}
                 {allSkills.length === 0 && <div className="hint">No skills installed yet.</div>}
-                {allSkills.map((s: any) => {
-                  const id = s.id ?? s.name;
-                  const label = s.name ?? s.id;
+                {allSkills.map((s) => {
+                  const id = s.id;
+                  const label = s.name;
                   const on = draft.skills.length === 0 || draft.skills.includes(id);
                   return (
                     <label key={id} className="check">
@@ -171,7 +172,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
                         onChange={() => {
                           if (draft.skills.length === 0) {
                             // Leaving default mode: materialize "all minus this one".
-                            const allIds = allSkills.map((x: any) => x.id ?? x.name).filter(Boolean);
+                            const allIds = allSkills.map((x) => x.id);
                             setDraft({ ...draft, skills: allIds.filter((x) => x !== id) });
                           } else {
                             setDraft({
@@ -192,9 +193,9 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
                   <div className="hint">All tools are allowed by default. Set a tool to Deny to block it.</div>
                 )}
                 {allMcp.length === 0 && <div className="hint">No tools connected yet. Add one from Tools in the sidebar first.</div>}
-                {allMcp.map((m: any) => {
+                {allMcp.map((m) => {
                   const name = m.name;
-                  const st = typeof m.status === "string" ? m.status : m.status?.status ?? "?";
+                  const st = m.status.status;
                   const cur = draft.mcp[name] ?? draft.mcp[normServer(name)];
                   const setAccess = (v: "allow" | "deny" | undefined) => {
                     const next = { ...draft.mcp };

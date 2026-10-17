@@ -1,6 +1,19 @@
+import type { AgentInfo, McpServer, SkillInfo } from "@opencode/client";
 import { client, workspaceDir } from "./opencode";
 
 export const BUILTIN_AGENT_IDS = new Set(["build", "plan", "general", "explore"]);
+
+/** A workspace bot: the agent catalog entry enriched from its bot file. */
+export type BotInfo = {
+  id: string;
+  description?: string;
+  /** Accent from the harness catalog. */
+  color?: string;
+  /** Accent stored in the bot file (settings override). */
+  botColor: string;
+  skills: string[];
+  mcp: Record<string, "allow" | "deny">;
+};
 
 export type BotDraft = {
   /** filename slug, also the agent id (nested paths allowed, e.g. team/coach) */
@@ -180,48 +193,51 @@ export async function ensureLocation(): Promise<string | null> {
   const ws = workspaceDir();
   if (!ws) return null;
   try {
-    await client.location.get({ location: { directory: ws } } as any);
+    await client.location.get({ location: { directory: ws } });
   } catch {}
   return ws;
 }
 
-async function scopedAgents(ws: string): Promise<any[]> {
-  const r: any = await client.agent.list({ location: { directory: ws } } as any);
-  return r?.data ?? [];
+async function scopedAgents(ws: string): Promise<AgentInfo[]> {
+  const r = await client.agent.list({ location: { directory: ws } });
+  return r.data;
 }
 
 /**
  * Catalog reads right after `location.reload` can come back empty for a
  * moment — discovery is async. Retry briefly so panels don't render "none".
  */
-async function withDiscovery<T extends any[]>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+async function withDiscovery<T>(fn: () => Promise<T[]>, attempts = 4): Promise<T[]> {
   for (let i = 0; ; i++) {
     const out = await fn();
-    if (!Array.isArray(out) || out.length || i >= attempts - 1) return out;
+    if (out.length || i >= attempts - 1) return out;
     await new Promise((r) => setTimeout(r, 600));
   }
 }
 
-export async function listBots(): Promise<any[]> {
+export async function listBots(): Promise<BotInfo[]> {
   const ws = await ensureLocation();
   if (!ws) return [];
   const all = await scopedAgents(ws);
   const bots = all.filter((a) => !BUILTIN_AGENT_IDS.has(a.id) && !a.hidden);
   // Enrich with skills/MCP from bot files (agent.list doesn't carry them).
-  await Promise.all(
-    bots.map(async (b) => {
+  return Promise.all(
+    bots.map(async (b): Promise<BotInfo> => {
+      let skills: string[] = [];
+      let mcp: Record<string, "allow" | "deny"> = {};
+      let botColor = "";
       try {
         const src = await readBotFile(b.id);
         if (src != null) {
           const { known } = parseBotFile(src);
-          b.skills = known.skills ?? [];
-          b.mcp = known.mcp ?? {};
-          b.botColor = known.color ?? "";
+          skills = known.skills ?? [];
+          mcp = known.mcp ?? {};
+          botColor = known.color ?? "";
         }
       } catch {}
+      return { id: b.id, description: b.description, color: b.color, botColor, skills, mcp };
     }),
   );
-  return bots;
 }
 
 /** Delete only the bot file (no reload/polling) — internal for rename. */
@@ -232,7 +248,7 @@ async function removeBotFile(slug: string): Promise<void> {
   const abs = `${ws.replace(/\/$/, "")}/${BOTS_REL_DIR}/${slug}.md`;
   if (!abs.startsWith(ws.replace(/\/$/, "") + "/")) throw new Error("This bot cannot be deleted.");
   const quoted = `'${abs.replace(/'/g, `'\\''`)}'`;
-  await (client as any).shell.create({
+  await client.shell.create({
     location: { directory: ws },
     command: `rm -f ${quoted}`,
   });
@@ -242,14 +258,11 @@ export async function readBotFile(name: string): Promise<string | null> {
   const ws = workspaceDir();
   if (!ws) return null;
   try {
-    // NOTE: file.read takes a flat path string (path suffix), not the nested
-    // object the .d.ts suggests — verified against the wire format.
-    const out: any = await (client as any).file.read({
+    const out = await client.file.read({
       location: { directory: ws },
       path: `${BOTS_REL_DIR}/${slugify(name)}.md`,
     });
-    const bytes: Uint8Array = out instanceof Uint8Array ? out : new Uint8Array(out?.data ?? []);
-    return dec.decode(bytes);
+    return dec.decode(out);
   } catch {
     return null;
   }
@@ -265,21 +278,21 @@ export async function listDisabledBots(): Promise<Array<{ id: string; descriptio
   if (!ws) return [];
   let agents: Set<string>;
   try {
-    agents = new Set((await scopedAgents(ws)).filter((a) => !a.hidden).map((a: any) => a.id));
+    agents = new Set((await scopedAgents(ws)).filter((a) => !a.hidden).map((a) => a.id));
   } catch {
     return [];
   }
-  let entries: any[] = [];
+  let entries: Array<{ path: string; type: "file" | "directory" }> = [];
   try {
-    const r: any = await (client as any).file.list({ location: { directory: ws }, path: BOTS_REL_DIR });
-    entries = r?.data ?? r ?? [];
+    const r = await client.file.list({ location: { directory: ws }, path: BOTS_REL_DIR });
+    entries = r.data;
   } catch {
     return [];
   }
   const out: Array<{ id: string; description?: string; color?: string }> = [];
   for (const e of entries) {
-    if (e.type !== "file" || !String(e.path).endsWith(".md")) continue;
-    const id = String(e.path).slice(BOTS_REL_DIR.length + 1, -3);
+    if (e.type !== "file" || !e.path.endsWith(".md")) continue;
+    const id = e.path.slice(BOTS_REL_DIR.length + 1, -3);
     if (!id || agents.has(id)) continue;
     const src = await readBotFile(id);
     const known = src ? parseBotFile(src).known : {};
@@ -304,7 +317,7 @@ export async function saveBot(
   await ensureLocation();
   const slug = slugify(d.name);
   if (!slug) throw new Error("Enter a valid bot name.");
-  await (client as any).file.write({
+  await client.file.write({
     location: { directory: ws },
     path: `${BOTS_REL_DIR}/${slug}.md`,
     payload: enc.encode(serializeBotFile({ ...d, name: slug }, unknownLines, extraRules)),
@@ -536,7 +549,7 @@ export async function createBotFromPrompt(text: string): Promise<string> {
 export async function upgradeBotPersonas(): Promise<{ checked: number; changed: number }> {
   const ws = await ensureLocation();
   if (!ws) return { checked: 0, changed: 0 };
-  let bots: any[] = [];
+  let bots: Array<{ id: string }> = [];
   try {
     bots = await listBots();
   } catch {}
@@ -546,7 +559,6 @@ export async function upgradeBotPersonas(): Promise<{ checked: number; changed: 
   let checked = 0;
   let changed = 0;
   for (const b of bots) {
-    if (!b?.id) continue;
     checked++;
     try {
       const src = await readBotFile(b.id);
@@ -554,7 +566,7 @@ export async function upgradeBotPersonas(): Promise<{ checked: number; changed: 
       const { known, unknownLines, system } = parseBotFile(src);
       const next = upgradedSystem(b.id, system);
       if (!next) continue;
-      await (client as any).file.write({
+      await client.file.write({
         location: { directory: ws },
         path: `${BOTS_REL_DIR}/${b.id}.md`,
         payload: enc.encode(
@@ -591,15 +603,14 @@ export async function upgradeBotPersonas(): Promise<{ checked: number; changed: 
 /** Re-point this bot's DM session(s) at a new name after a rename (best-effort). */
 export async function renameBotHistory(from: string, to: string): Promise<void> {
   try {
-    const r: any = await client.session.list();
-    const list: any[] = r?.data ?? [];
-    for (const s of list) {
-      if (s?.metadata?.kind === "dm" && s?.metadata?.bot === from) {
+    const r = await client.session.list();
+    for (const s of r.data) {
+      if (s.metadata?.kind === "dm" && s.metadata?.bot === from) {
         await client.session.update({
           sessionID: s.id,
           title: to,
           metadata: { ...(s.metadata ?? {}), kind: "dm", bot: to },
-        } as any);
+        });
       }
     }
   } catch (e) {
@@ -616,16 +627,14 @@ export async function renameBotHistory(from: string, to: string): Promise<void> 
  */
 export async function chatHasStaleSkillMarker(sessionID: string): Promise<boolean> {
   try {
-    const r: any = await client.message.list({ sessionID });
-    const all: any[] = r?.data ?? r?.messages ?? r ?? [];
-    if (!Array.isArray(all)) return false;
-    const ordered = all
-      .map((m: any, i: number) => ({ m, t: m?.time?.created ?? 0, i }))
+    const r = await client.message.list({ sessionID });
+    const ordered = r.data
+      .map((m, i) => ({ m, t: m.time.created, i }))
       .sort((a, b) => a.t - b.t || a.i - b.i)
       .map((x) => x.m);
     for (const m of ordered) {
-      if (m?.type === "user") return false; // a real request came first — legit chat
-      if (m?.type === "skill") return true; // injected when the chat was created
+      if (m.type === "user") return false; // a real request came first — legit chat
+      if (m.type === "skill") return true; // injected when the chat was created
     }
     return false;
   } catch {
@@ -634,21 +643,17 @@ export async function chatHasStaleSkillMarker(sessionID: string): Promise<boolea
 }
 
 /** Skills catalog (scoped to workspace location when set). */
-export async function listSkills(): Promise<any[]> {
+export async function listSkills(): Promise<SkillInfo[]> {
   const ws = workspaceDir();
   return withDiscovery(async () => {
     try {
-      const r: any = await (client as any).skill.list(
-        ws ? ({ location: { directory: ws } } as any) : undefined,
-      );
-      const data = r?.data ?? r ?? [];
-      const arr: any[] = Array.isArray(data) ? data : [];
+      const r = await client.skill.list(ws ? { location: { directory: ws } } : undefined);
       // The harness ships built-in skills ("/builtin/opencode.md",
       // "/builtin/report.md") that teach agents about OpenCode itself. They
       // are for developing OpenCode or this app — not for the user's bots —
       // so keep them out of the catalog, the default activation set and the
       // marketplace's "installed" view.
-      return arr.filter((s: any) => !(typeof s?.path === "string" && s.path.startsWith("/builtin/")));
+      return r.data.filter((s) => !s.path.startsWith("/builtin/"));
     } catch {
       return [];
     }
@@ -656,30 +661,28 @@ export async function listSkills(): Promise<any[]> {
 }
 
 /** MCP servers catalog (scoped to workspace location when set). */
-export async function listMcp(): Promise<any[]> {
+export async function listMcp(): Promise<McpServer[]> {
   const ws = workspaceDir();
   return withDiscovery(async () => {
     try {
-      const r: any = await (client as any).mcp.list(
-        ws ? ({ location: { directory: ws } } as any) : undefined,
-      );
-      const data = r?.data ?? r ?? [];
-      return Array.isArray(data) ? data : [];
+      const r = await client.mcp.list(ws ? { location: { directory: ws } } : undefined);
+      return r.data;
     } catch {
       return [];
     }
   });
 }
 
-function mcpLoc() {
+/** `location` payload shared by the MCP routes. */
+function mcpLoc(): { directory: string } | undefined {
   const ws = workspaceDir();
-  return ws ? { location: { directory: ws } } : undefined;
+  return ws ? { directory: ws } : undefined;
 }
 
 export async function connectMcpServer(name: string): Promise<void> {
-  await (client as any).mcp.connect({ server: name, location: mcpLoc() } as any);
+  await client.mcp.connect({ server: name, location: mcpLoc() });
 }
 
 export async function disconnectMcpServer(name: string): Promise<void> {
-  await (client as any).mcp.disconnect({ server: name, location: mcpLoc() } as any);
+  await client.mcp.disconnect({ server: name, location: mcpLoc() });
 }

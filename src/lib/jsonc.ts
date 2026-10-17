@@ -76,7 +76,7 @@ export function stripComments(text: string): string {
 }
 
 /** Tolerant parse for reading config values (comments and trailing commas ok). */
-export function parseLoose(text: string): any {
+export function parseLoose(text: string): unknown {
   const cleaned = stripComments(text).replace(/,(\s*[}\]])/g, "$1");
   return JSON.parse(cleaned);
 }
@@ -174,23 +174,31 @@ export function findKeyValueSpan(text: string, key: string): KeySpan | null {
   return null;
 }
 
+/** String id of an array entry: a bare string, or an object's `package`. */
+function entryValue(e: unknown): string | null {
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object" && "package" in e) {
+    const p = (e as { package?: unknown }).package;
+    return typeof p === "string" ? p : null;
+  }
+  return null;
+}
+
 /** Read a top-level array's string entries (object entries expose `package`). */
 export function readArrayEntries(text: string, key: string): string[] {
   const span = findKeyValueSpan(text, key);
   if (!span) return [];
-  let arr: any;
+  let arr: unknown;
   try {
     arr = parseLoose(text.slice(span.start, span.end));
   } catch {
     return [];
   }
   if (!Array.isArray(arr)) return [];
-  return arr
-    .map((e) => (typeof e === "string" ? e : e && typeof e.package === "string" ? e.package : null))
-    .filter((x): x is string => !!x);
+  return arr.map(entryValue).filter((x): x is string => !!x);
 }
 
-function serializeEntries(entries: any[]): string {
+function serializeEntries(entries: unknown[]): string {
   if (!entries.length) return "[]";
   return `[\n    ${entries.map((e) => JSON.stringify(e)).join(",\n    ")}\n  ]`;
 }
@@ -254,7 +262,7 @@ export function removeValue(text: string, key: string): string {
 export function upsertArrayEntry(text: string, key: string, value: string): string {
   const span = findKeyValueSpan(text, key);
   if (!span) return upsertValue(text, key, [value]);
-  let arr: any;
+  let arr: unknown;
   try {
     arr = parseLoose(text.slice(span.start, span.end));
   } catch {
@@ -262,15 +270,14 @@ export function upsertArrayEntry(text: string, key: string, value: string): stri
   }
   if (!Array.isArray(arr)) throw new Error(`"${key}" must be an array`);
   if (readArrayEntries(text, key).includes(value)) return text;
-  arr.push(value);
-  return text.slice(0, span.start) + serializeEntries(arr) + text.slice(span.end);
+  return text.slice(0, span.start) + serializeEntries([...arr, value]) + text.slice(span.end);
 }
 
 /** Remove `value` from the string array at top-level `key` (no-op when absent). */
 export function removeArrayEntry(text: string, key: string, value: string): string {
   const span = findKeyValueSpan(text, key);
   if (!span) return text;
-  let arr: any;
+  let arr: unknown;
   try {
     arr = parseLoose(text.slice(span.start, span.end));
   } catch {
@@ -278,9 +285,8 @@ export function removeArrayEntry(text: string, key: string, value: string): stri
   }
   if (!Array.isArray(arr)) return text;
   const next = arr.filter((e) => {
-    if (typeof e === "string") return e !== value;
-    if (e && typeof e.package === "string") return e.package !== value;
-    return true;
+    const id = entryValue(e);
+    return id === null || id !== value;
   });
   if (next.length === arr.length) return text;
   return text.slice(0, span.start) + serializeEntries(next) + text.slice(span.end);
@@ -295,7 +301,7 @@ export function upsertDeep(text: string, path: string[], key: string, value: unk
   const [head, ...rest] = path;
   const s = findKeyValueSpan(text, head);
   if (!s) {
-    let node: any = { [key]: value };
+    let node: Record<string, unknown> = { [key]: value };
     for (let i = rest.length - 1; i >= 0; i--) node = { [rest[i]]: node };
     return upsertValue(text, head, node);
   }

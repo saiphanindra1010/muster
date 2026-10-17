@@ -1,4 +1,6 @@
 /** Icon set: lucide-react with our size-first API. Drop-in for the old hand SVGs. */
+import type { ComponentType } from "react";
+import type { LucideProps } from "lucide-react";
 import {
   Activity,
   ArrowUp,
@@ -34,7 +36,10 @@ import {
 
 type P = { size?: number; className?: string };
 
-const w = (C: any) => ({ size = 16, className }: P) => <C size={size} className={className} />;
+const w =
+  (C: ComponentType<LucideProps>) =>
+  ({ size = 16, className }: P) =>
+    <C size={size} className={className} />;
 
 export const IconPlus = w(Plus);
 export const IconRefresh = w(RefreshCw);

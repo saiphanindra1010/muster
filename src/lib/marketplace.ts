@@ -8,6 +8,7 @@
  *   (`mcp.servers.<name>`, `plugins: [...]`), edited surgically by ./jsonc.
  * - Skills land in `.opencode/skills/<id>/SKILL.md`.
  */
+import type { PluginInfo } from "@opencode/client";
 import catalogJson from "../marketplace.json";
 import { client, workspaceDir } from "./opencode";
 import { listMcp, listSkills } from "./bots";
@@ -43,7 +44,7 @@ export interface MarketItem {
   tags?: string[];
   homepage?: string;
   requires?: string[];
-  mcp?: { config: Record<string, any>; signin?: boolean; token?: McpTokenField };
+  mcp?: { config: Record<string, unknown>; signin?: boolean; token?: McpTokenField };
   plugin?: { package: string };
 }
 
@@ -91,32 +92,37 @@ export interface ConfigView {
 
 export async function readConfigText(): Promise<string> {
   try {
-    const out: any = await (client as any).file.read({ location: loc(), path: "opencode.jsonc" });
-    const bytes: Uint8Array = out instanceof Uint8Array ? out : new Uint8Array(out?.data ?? []);
-    return dec.decode(bytes);
+    const out = await client.file.read({ location: loc(), path: "opencode.jsonc" });
+    return dec.decode(out);
   } catch {
     return "";
   }
 }
 
 async function writeConfigText(text: string): Promise<void> {
-  await (client as any).file.write({ location: loc(), path: "opencode.jsonc", payload: enc.encode(text) });
-  await (client as any).location.reload();
+  await client.file.write({ location: loc(), path: "opencode.jsonc", payload: enc.encode(text) });
+  await client.location.reload();
 }
+
+/** Shape of the workspace config we care about; everything else is preserved. */
+type RawConfig = {
+  plugins?: Array<string | { package?: string }>;
+  mcp?: { servers?: Record<string, unknown> };
+};
 
 /** What the workspace config currently declares. */
 export async function configView(): Promise<ConfigView> {
   const raw = await readConfigText();
-  let parsed: any = {};
+  let parsed: RawConfig = {};
   try {
-    parsed = raw.trim() ? parseLoose(raw) : {};
+    parsed = raw.trim() ? (parseLoose(raw) as RawConfig) : {};
   } catch {
     parsed = {};
   }
-  const plugins = Array.isArray(parsed?.plugins)
-    ? parsed.plugins.map((p: any) => (typeof p === "string" ? p : p?.package)).filter(Boolean)
-    : [];
-  return { mcpServers: Object.keys(parsed?.mcp?.servers ?? {}), plugins };
+  const plugins = (parsed.plugins ?? [])
+    .map((p) => (typeof p === "string" ? p : p.package))
+    .filter((p): p is string => Boolean(p));
+  return { mcpServers: Object.keys(parsed.mcp?.servers ?? {}), plugins };
 }
 
 /* ---------------------------------- state ---------------------------------- */
@@ -135,10 +141,10 @@ export interface MarketState {
   skills: Set<string>;
 }
 
-async function pluginList(): Promise<any[]> {
+async function pluginList(): Promise<PluginInfo[]> {
   try {
-    const r: any = await (client as any).plugin.list({ location: loc() });
-    return r?.data ?? [];
+    const r = await client.plugin.list({ location: loc() });
+    return r.data;
   } catch {
     return [];
   }
@@ -153,15 +159,17 @@ export async function loadMarket(): Promise<{ cfg: ConfigView; state: MarketStat
   ]);
   const mcp = new Map<string, McpStatus>();
   for (const s of mcpList) {
-    const st = typeof s.status === "string" ? s.status : (s.status?.status ?? "unknown");
-    mcp.set(s.name, { status: st, error: s.status?.error });
+    const status = s.status;
+    mcp.set(s.name, { status: status.status, error: "error" in status ? status.error : undefined });
   }
   const pmap = new Map<string, PluginStatus>();
   for (const p of plugins) {
-    const target = p.source?.type === "package" ? p.source.target : null;
-    if (target) pmap.set(target, { status: p.state?.status ?? "unknown", version: p.source?.version });
+    const source = p.source;
+    if (source.type === "package") {
+      pmap.set(source.target, { status: p.state.status, version: source.version });
+    }
   }
-  const skills = new Set<string>(skillList.map((s: any) => s.id ?? s.name).filter(Boolean));
+  const skills = new Set<string>(skillList.map((s) => s.id));
   return { cfg, state: { mcp, plugins: pmap, skills } };
 }
 
@@ -173,9 +181,9 @@ export function isInstalled(cfg: ConfigView, state: MarketState, item: MarketIte
 
 /* --------------------------------- install --------------------------------- */
 
-export async function installMcpServer(name: string, config: Record<string, any>): Promise<void> {
+export async function installMcpServer(name: string, config: Record<string, unknown>): Promise<void> {
   if (!name.trim()) throw new Error("Enter a server name.");
-  const conf: Record<string, any> = JSON.parse(JSON.stringify(config));
+  const conf = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
   await writeConfigText(upsertDeep(await readConfigText(), ["mcp", "servers"], name, conf));
   await waitForMcp(name, 15000);
 }
@@ -183,7 +191,7 @@ export async function installMcpServer(name: string, config: Record<string, any>
 export async function uninstallMcpServer(name: string): Promise<void> {
   await writeConfigText(removeDeep(await readConfigText(), ["mcp", "servers"], name));
   try {
-    await (client as any).mcp.remove({ server: name, location: loc() }); // drop any in-memory instance
+    await client.mcp.remove({ server: name, location: loc() }); // drop any in-memory instance
   } catch {}
 }
 
@@ -191,7 +199,7 @@ async function waitForMcp(name: string, ms: number): Promise<void> {
   const until = Date.now() + ms;
   for (;;) {
     const list = await listMcp();
-    if (list.some((s: any) => s.name === name)) return;
+    if (list.some((s) => s.name === name)) return;
     if (Date.now() > until) throw new Error(`“${name}” did not start — check the URL or command`);
     await sleep(1200);
   }
@@ -211,17 +219,17 @@ export async function uninstallPluginPackage(pkg: string): Promise<void> {
 export async function installSkill(id: string): Promise<void> {
   const body = SKILL_BODIES[id];
   if (!body) throw new Error(`Skill “${id}” has no installable content.`);
-  await (client as any).file.write({
+  await client.file.write({
     location: loc(),
     path: `.opencode/skills/${id}/SKILL.md`,
     payload: enc.encode(body),
   });
-  await (client as any).location.reload();
+  await client.location.reload();
   // Discovery is best-effort — the file write is the success condition.
   const until = Date.now() + 8000;
   while (Date.now() < until) {
     const list = await listSkills();
-    if (list.some((s: any) => (s.id ?? s.name) === id)) return;
+    if (list.some((s) => s.id === id)) return;
     await sleep(800);
   }
 }
@@ -229,20 +237,21 @@ export async function installSkill(id: string): Promise<void> {
 export async function uninstallSkill(id: string): Promise<void> {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error("Enter a valid skill name (lowercase letters, digits, dashes).");
   const dir = `${wsDir().replace(/\/$/, "")}/.opencode/skills/${id}`;
-  await (client as any).shell.create({ location: loc(), command: `rm -rf '${dir.replace(/'/g, `'\\''`)}'` });
-  await (client as any).location.reload();
+  await client.shell.create({ location: loc(), command: `rm -rf '${dir.replace(/'/g, `'\\''`)}'` });
+  await client.location.reload();
 }
 
 /* ------------------------------- entry points ------------------------------ */
 
 export async function installItem(item: MarketItem, token?: string): Promise<void> {
   if (item.kind === "mcp") {
-    const conf: Record<string, any> = JSON.parse(JSON.stringify(item.mcp?.config ?? {}));
+    const conf = JSON.parse(JSON.stringify(item.mcp?.config ?? {})) as Record<string, unknown>;
     const tok = item.mcp?.token;
     if (tok) {
       const value = token?.trim() ?? "";
       if (!value) throw new Error(`${tok.label} is required to connect.`);
-      conf.headers = { ...(conf.headers ?? {}), [tok.header]: `${tok.prefix ?? ""}${value}` };
+      const headers = (conf.headers ?? {}) as Record<string, string>;
+      conf.headers = { ...headers, [tok.header]: `${tok.prefix ?? ""}${value}` };
     }
     return installMcpServer(item.id, conf);
   }

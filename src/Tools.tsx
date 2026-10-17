@@ -1,17 +1,13 @@
 import { useEffect, useState } from "react";
+import type { McpServer } from "@opencode/client";
 import { connectMcpServer, disconnectMcpServer, listMcp, mcpStatusLabel, slugify } from "./lib/bots";
 import { installMcpServer, uninstallMcpServer } from "./lib/marketplace";
 import { IconPlus, IconX } from "./icons";
 import { useEscape } from "./lib/useEscape";
 
-function statusOf(s: any): { state: string; error?: string } {
-  if (typeof s.status === "string") return { state: s.status };
-  return { state: s.status?.status ?? "unknown", error: s.status?.error };
-}
-
 function statusColor(st: string): string {
   if (st === "connected") return "var(--green)";
-  if (st === "needs_auth" || st === "needs-auth" || st === "pending") return "var(--amber)";
+  if (st === "needs_auth" || st === "pending") return "var(--amber)";
   return "var(--red)";
 }
 
@@ -22,7 +18,7 @@ function statusColor(st: string): string {
  * Servers that need OAuth sign-in show a status — the harness owns that flow.
  */
 export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
-  const [servers, setServers] = useState<any[]>([]);
+  const [servers, setServers] = useState<McpServer[]>([]);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"local" | "remote">("remote");
   const [command, setCommand] = useState("");
@@ -79,8 +75,9 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
         </div>
         <p>Tools your bots can use. Anything that needs a sign-in shows its status here.</p>
         {servers.length === 0 && <div className="hint">Nothing connected yet — add a tool below.</div>}
-        {servers.map((s: any) => {
-          const { state: st, error } = statusOf(s);
+        {servers.map((s) => {
+          const st = s.status.status;
+          const error = "error" in s.status ? s.status.error : undefined;
           return (
             <div key={s.name} className="mcp-row" style={{ border: "1px solid var(--line-soft)", borderRadius: 12, padding: "9px 12px" }} title={error ? String(error).slice(0, 200) : undefined}>
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
