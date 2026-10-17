@@ -8,7 +8,8 @@
     "provider": "random"
   },
   "permissions": [
-    { "action": "websearch", "resource": "*", "effect": "ask" },
+    // Web search is read-only, so it runs without asking. Keep "ask" for the
+    // truly destructive stuff (shell git push, etc.).
     { "action": "shell", "resource": "git push *", "effect": "ask" }
   ],
   "mcp": {

@@ -171,12 +171,13 @@ its chat history follows the rename. An empty prompt creates a general-purpose
 
 - **Skills**: checkbox list from the harness skill catalog. Default = all skills
   on (file stays empty, so future skills apply automatically); unchecking one
-  materializes the explicit list. Activated on each new chat via `session.skill`.
-  The harness's built-in skills (`opencode`, `report` — OpenCode's own docs and
-  issue-reporting know-how) are excluded: they're for developing OpenCode, not
-  for your bots. Chats from older builds that already got such a skill baked
-  into their history are archived (`dm-archived` in the DB, transcript kept) and
-  replaced with a fresh chat the first time that bot is opened.
+  materializes the explicit list. Bots load a skill only when it's relevant to
+  the request — nothing is force-injected when a chat is created. The harness's
+  built-in skills (`opencode`, `report` — OpenCode's own docs and issue-reporting
+  know-how) are excluded: they're for developing OpenCode, not for your bots.
+  Chats from older builds that got a skill's text injected when they were opened
+  are archived (`dm-archived` in the DB, transcript kept) and replaced with a
+  fresh chat the first time that bot is opened.
 - **Tools (MCP)**: per-server Default / Allow / Deny, saved as `<server>_*`
   permission rules the harness enforces.
 - **Disable / Enable**: `disabled: true` removes the agent from the harness

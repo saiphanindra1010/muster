@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
-import { activateBotSkills, chatHasBuiltinSkill, createBotFromPrompt, listBots, listDisabledBots, listMcp, resolveBotSkills, upgradeBotPersonas } from "./lib/bots";
+import { chatHasStaleSkillMarker, createBotFromPrompt, listBots, listDisabledBots, listMcp, upgradeBotPersonas } from "./lib/bots";
 import {
   IconActivity, IconArrowUp, IconBot, IconCheck, IconChevronDown, IconCopy,
   IconGear, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
@@ -321,11 +321,12 @@ export function App() {
   /** Open a bot chat, creating its session on first contact. */
   const openBot = async (botID: string) => {
     let existing = sessions.find((s) => s.kind === "dm" && s.bot === botID);
-    if (existing && (await chatHasBuiltinSkill(existing.id))) {
-      // Chats from before builtin-skill filtering carry a huge OpenCode
-      // docs marker that is read-only history and overrides the bot's
-      // persona. It can't be cleaned in place — archive the chat (kept in
-      // the DB as dm-archived) and give the bot a fresh one.
+    if (existing && (await chatHasStaleSkillMarker(existing.id))) {
+      // Chats from older builds got a skill's full text force-injected when
+      // they were created (and the bot opened the conversation talking about
+      // it). That's read-only history and can't be cleaned in place — archive
+      // the chat (kept in the DB as dm-archived) and give the bot a fresh,
+      // quiet one.
       try {
         await (client as any).session.update({
           sessionID: existing.id,
@@ -353,9 +354,6 @@ export function App() {
         title: botID,
         metadata: { kind: "dm", bot: botID },
       } as any);
-      try {
-        await activateBotSkills(s.id, await resolveBotSkills(botID));
-      } catch {}
       setActiveSession(s.id, botID);
       setMsgs([]);
       setPerms([]);
@@ -403,9 +401,6 @@ export function App() {
         } as any);
         id = s.id;
         setActiveSession(id, activeBot);
-        try {
-          await activateBotSkills(id!, await resolveBotSkills(activeBot));
-        } catch {}
         refreshSessions();
       } catch (e) {
         say(`Could not start chat: ${(e as Error).message}`);
@@ -503,6 +498,9 @@ export function App() {
             clearWatchdog(sid);
             setSessionBusy(sid, false);
             if (sid === activeIDRef.current) {
+              // Turn over — stored messages are authoritative; drop any
+              // streaming buffers so they can't linger as duplicate bubbles.
+              setLive({});
               loadThread(sid);
               loadPerms(sid);
             } else {
@@ -519,9 +517,24 @@ export function App() {
             setLive((prev) => ({ ...prev, [id]: (prev[id] ?? "") + chunk }));
           }
           break;
-        case "session.text.ended":
-          if (sid === activeIDRef.current) loadThread(sid);
+        case "session.text.ended": {
+          const mid = d.assistantMessageID as string | undefined;
+          if (sid === activeIDRef.current) {
+            // The finished message now lives in the stored thread; its live
+            // buffer is keyed by message id (stored parts use part ids), so it
+            // would otherwise be re-rendered as a duplicate.
+            if (mid) {
+              setLive((prev) => {
+                if (!(mid in prev)) return prev;
+                const n = { ...prev };
+                delete n[mid];
+                return n;
+              });
+            }
+            loadThread(sid);
+          }
           break;
+        }
         case "permission.asked":
         case "permission.replied":
           // Keep the whole team's "needs you" state accurate, not just the
