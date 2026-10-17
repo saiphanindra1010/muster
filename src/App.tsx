@@ -18,7 +18,24 @@ type Session = { id: string; kind?: string; bot?: string };
 type ChatMsg = {
   role: "user" | "assistant" | "tool"; text: string; key: string;
   time?: number; agent?: string; mcps?: string[]; rep?: number;
+  /** Tool name for tool rows — powers the compact activity labels. */
+  tool?: string;
+  /** Tool row that ended in failure. */
+  err?: boolean;
+  /** Sent mid-turn — the harness runs it right after the current turn. */
+  queued?: boolean;
+  /** Harness inbox id — how the optimistic bubble folds into the stored thread. */
+  inboxID?: string;
 };
+/** One stroke of the live turn feed: streamed text or a tool being run. */
+type LiveEntry =
+  | { kind: "text"; key: string; text: string }
+  | { kind: "tool"; key: string; name: string; text: string; refs: string[]; state: "running" | "done" | "error" };
+/** Unified tool row (stored or live) — consecutive ones group into one line. */
+type ToolItem = { key: string; name: string; text: string; refs: string[]; state: "running" | "done" | "error"; rep?: number };
+type DisplayRow =
+  | { kind: "msg"; m: ChatMsg; tkey: string; streamed?: boolean }
+  | { kind: "tools"; key: string; items: ToolItem[] };
 type ModelOpt = { key: string; providerID: string; id: string };
 type BotMeta = { id: string; color?: string; description?: string };
 
@@ -35,9 +52,11 @@ const WATCHDOG_MS = 100_000;
 /** Events that mean "the bot is alive" — reset the per-session watchdog. */
 const ACTIVITY_EVENTS = new Set([
   "session.text.started", "session.text.delta", "session.text.ended",
+  "session.reasoning.started", "session.reasoning.delta", "session.reasoning.ended",
+  "session.tool.input.started", "session.tool.input.delta", "session.tool.input.ended",
   "session.tool.called", "session.tool.progress", "session.tool.success", "session.tool.failed",
   "session.step.started", "session.step.streamed", "session.usage.updated",
-  "session.execution.started",
+  "session.execution.started", "session.retry.scheduled",
 ]);
 
 /** Events that mean a catalog (bots/tools/models/skills) may have changed. */
@@ -62,6 +81,55 @@ function mcpRefs(part: any): string[] {
   for (const m of code.matchAll(/\btools\s*\.\s*([A-Za-z0-9_-]+)\s*\.\s*([A-Za-z0-9_-]+)/g)) calls.add(`${m[1]}.${m[2]}`);
   if (!calls.size) for (const m of code.matchAll(/tools\s*\[\s*["'`]([^"'`\n]+)["'`]\s*\]/g)) servers.add(m[1]);
   return [...(calls.size ? calls : servers)].slice(0, 6);
+}
+
+/** Plain-language label for what a running tool is doing. */
+const TOOL_PHRASES: Record<string, string> = {
+  bash: "running a command",
+  webfetch: "reading a page",
+  websearch: "searching the web",
+  read: "checking files",
+  glob: "finding files",
+  grep: "searching files",
+  write: "writing a file",
+  edit: "editing a file",
+  patch: "patching a file",
+  skill: "consulting a skill",
+  execute: "running a script",
+};
+
+function toolPhrase(name: string, refs: string[]): string {
+  if (refs.some((r) => r.startsWith("agent-browser.")) || name.startsWith("agent_browser_")) return "browsing the web";
+  if (refs.length) return `using ${refs[0].split(".")[0]}`;
+  return TOOL_PHRASES[name] ?? `using ${name}`;
+}
+
+/** Short, human-readable hint for a tool's input — never dumps raw JSON.
+ *  `execute`/`bash` scripts are the worst spam offenders, so they get a
+ *  one-line hint (or nothing when the MCP chips already say enough). */
+function toolDetail(name: string, input: any, refs: string[]): string {
+  if (refs.length || input == null) return "";
+  if (name === "write" || name === "edit" || name === "read" || name === "patch") {
+    const p = input.filePath ?? input.path ?? input.filename;
+    if (typeof p === "string" && p) return ` ${p}`;
+  }
+  if (name === "execute" || name === "bash") {
+    const code = typeof input === "string" ? input : input?.code ?? input?.command ?? "";
+    const line = String(code).split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#!"));
+    if (!line) return "";
+    const clean = line.replace(/^(\/\/|#)\s?/, "").replace(/\s+/g, " ");
+    return ` ${clean.slice(0, 72)}${clean.length > 72 ? "…" : ""}`;
+  }
+  let j = "";
+  try { j = JSON.stringify(input) ?? ""; } catch {}
+  if (!j || j === "{}") return "";
+  return ` ${j.slice(0, 72)}${j.length > 72 ? "…" : ""}`;
+}
+
+/** Live tool line text — same shape as the stored thread's tool lines. */
+function toolLine(name: string, input: any): { text: string; refs: string[] } {
+  const refs = mcpRefs({ input });
+  return { text: `${name}${toolDetail(name, input, refs)}`, refs };
 }
 
 marked.use({ gfm: true, breaks: true });
@@ -108,6 +176,12 @@ function fmtTime(ts?: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+/** Elapsed clock for the working row — "0:42". */
+function fmtClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function dayLabel(ts?: number): string {
   if (!ts) return "";
   const d = new Date(ts);
@@ -143,7 +217,10 @@ export function App() {
   const [votes, setVotes] = useState<Record<string, 1 | -1>>({});
   const [harnessOk, setHarnessOk] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
-  const [live, setLive] = useState<Record<string, string>>({});
+  const [live, setLive] = useState<Record<string, LiveEntry[]>>({});
+  const [pending, setPending] = useState<Record<string, ChatMsg[]>>({});
+  const [openClusters, setOpenClusters] = useState<Set<string>>(() => new Set());
+  const [now, setNow] = useState(() => Date.now());
   // Team status per session: who needs your approval, who has new replies.
   const [needsYou, setNeedsYou] = useState<Record<string, boolean>>({});
   const [unread, setUnread] = useState<Record<string, boolean>>({});
@@ -154,6 +231,15 @@ export function App() {
   const statusTimer = useRef<any>(null);
   const watchdogs = useRef<Record<string, any>>({});
   const busyRef = useRef<Record<string, boolean>>({});
+  /** When each session's current turn started — powers the elapsed clock. */
+  const turns = useRef<Record<string, number>>({});
+  /** Mirror of `live` readable from event handlers without stale closures. */
+  const liveRef = useRef<Record<string, LiveEntry[]>>({});
+  /** Mirror of `pending` — same reason. */
+  const pendingRef = useRef<Record<string, ChatMsg[]>>({});
+  /** Inbox ids whose delivery event arrived before we knew the id (HTTP race). */
+  const deliveredInbox = useRef<Set<string>>(new Set());
+  const activeBotRef = useRef<string | null>(null);
   const activeIDRef = useRef<string | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -213,6 +299,73 @@ export function App() {
       }
     }, WATCHDOG_MS);
   };
+
+  /** Live-feed helpers — the feed is keyed per session and mirrored in a ref
+   *  so event handlers can read/update it without stale closures. */
+  const replaceLive = (fn: (prev: Record<string, LiveEntry[]>) => Record<string, LiveEntry[]>) => {
+    const next = fn(liveRef.current);
+    if (next === liveRef.current) return;
+    liveRef.current = next;
+    setLive(next);
+  };
+
+  const replacePending = (fn: (prev: Record<string, ChatMsg[]>) => Record<string, ChatMsg[]>) => {
+    const next = fn(pendingRef.current);
+    if (next === pendingRef.current) return;
+    pendingRef.current = next;
+    setPending(next);
+  };
+
+  /** A delivered inbox message is now part of the conversation — move its
+   *  optimistic bubble into the thread under the id the store will use (the
+   *  harness keeps the inbox id as the user message id, verified live), so
+   *  the later stored version replaces it seamlessly. */
+  const foldDelivered = (sid: string, inboxID: string) => {
+    const item = (pendingRef.current[sid] ?? []).find((x) => x.inboxID === inboxID);
+    if (!item) return false;
+    replacePending((p) => {
+      const kept = (p[sid] ?? []).filter((x) => x.inboxID !== inboxID);
+      const n = { ...p };
+      if (kept.length) n[sid] = kept;
+      else delete n[sid];
+      return n;
+    });
+    if (sid === activeIDRef.current) {
+      const msg: ChatMsg = { ...item, key: inboxID, queued: false, time: item.time ?? Date.now() };
+      setMsgs((prev) => (prev.some((m) => m.key === inboxID) ? prev : [...prev, msg]));
+    }
+    deliveredInbox.current.delete(inboxID);
+    return true;
+  };
+
+  const mutFeed = (sid: string, fn: (list: LiveEntry[]) => LiveEntry[]) => {
+    replaceLive((prev) => {
+      const cur = prev[sid] ?? [];
+      const next = fn(cur);
+      if (next === cur) return prev;
+      return { ...prev, [sid]: next };
+    });
+  };
+
+  const dropFeed = (sid: string) =>
+    replaceLive((prev) => {
+      if (!(sid in prev)) return prev;
+      const n = { ...prev };
+      delete n[sid];
+      return n;
+    });
+
+  const toggleCluster = (k: string) =>
+    setOpenClusters((s) => {
+      const n = new Set(s);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+
+  useEffect(() => {
+    activeBotRef.current = activeBot;
+  }, [activeBot]);
 
   const refreshSessions = async () => {
     try {
@@ -310,27 +463,53 @@ export function App() {
             // NOTE: reasoning parts are the model's internal chain-of-thought —
             // deliberately not rendered. Only final text + tool activity show.
             else if (p.type === "tool") {
+              const name = p.name ?? p.tool ?? "tool";
               const refs = mcpRefs(p);
               const input = p.input ?? p.args ?? p.state?.input;
-              const detail = refs.length || !input ? "" : ` ${JSON.stringify(input).slice(0, 200)}`;
+              const st = p.state?.status;
               out.push({
                 role: "tool",
-                text: `${p.name ?? p.tool ?? "tool"}${detail}`,
+                text: `${name}${toolDetail(name, input, refs)}`,
                 key: p.id ?? `${m.id}-${out.length}`,
                 time: m.time?.created,
                 agent: m.agent,
                 mcps: refs,
+                tool: name,
+                err: st === "error" || st === "failed",
               });
             }
           }
         }
       }
       setMsgs(out);
-      // Drop live-stream buffers superseded by stored messages.
-      const keys = new Set(out.map((mm) => mm.key));
-      setLive((prev) => {
+      // Optimistic "you" bubbles fold into the stored thread once they land —
+      // send() never waits for the echo, so this is the cleanup path.
+      replacePending((prev) => {
+        const list = prev[id];
+        if (!list?.length) return prev;
+        const keep = list.filter((p) =>
+          !out.some((m) =>
+            m.role === "user" &&
+            ((p.inboxID != null && m.key === p.inboxID) ||
+              (m.text === p.text && (!p.time || !m.time || Math.abs((m.time ?? 0) - p.time) < 120_000)))));
+        if (keep.length === list.length) return prev;
         const n = { ...prev };
-        for (const k of Object.keys(n)) if (keys.has(k)) delete n[k];
+        if (keep.length) n[id] = keep;
+        else delete n[id];
+        return n;
+      });
+      // Drop live-stream strokes the stored thread now covers (mid-turn
+      // resyncs only — turns otherwise paint from the feed until they end).
+      const keys = new Set(out.map((mm) => mm.key));
+      const storedTexts = new Set(out.filter((m) => m.role === "assistant").map((m) => m.text.trim()));
+      replaceLive((prev) => {
+        const list = prev[id];
+        if (!list?.length) return prev;
+        const kept = list.filter((x) => (x.kind === "tool" ? !keys.has(x.key) : !storedTexts.has(x.text.trim())));
+        if (kept.length === list.length) return prev;
+        const n = { ...prev };
+        if (kept.length) n[id] = kept;
+        else delete n[id];
         return n;
       });
     } catch {}
@@ -391,7 +570,7 @@ export function App() {
       markSeen(existing.id);
       setMsgs([]);
       setPerms([]);
-      setLive({});
+      replaceLive(() => ({}));
       loadThread(existing.id);
       loadPerms(existing.id);
       syncSessionModel(existing.id);
@@ -407,7 +586,7 @@ export function App() {
       setActiveSession(s.id, botID);
       setMsgs([]);
       setPerms([]);
-      setLive({});
+      replaceLive(() => ({}));
       refreshSessions();
       setTimeout(() => taRef.current?.focus(), 50);
     } catch (e) {
@@ -458,26 +637,47 @@ export function App() {
       }
     }
     const wasBusy = !!busyRef.current[id!];
-    setMsgs((m) => [...m, { role: "user", text: t, key: Date.now().toString(), time: Date.now() }]);
+    // The bubble is optimistic: it lives in `pending` until the stored thread
+    // picks it up (inbox.delivered / next loadThread), so no reload-then-jump.
+    const pk = `p-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    replacePending((p) => ({
+      ...p,
+      [id!]: [...(p[id!] ?? []), { role: "user", text: t, key: pk, time: Date.now(), queued: wasBusy }],
+    }));
     setInput("");
-    requestAnimationFrame(() => {
-      autogrow();
-      const el = threadRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    });
-    if (!wasBusy) setSessionBusy(id!, true);
+    requestAnimationFrame(() => autogrow());
+    if (!wasBusy) {
+      setSessionBusy(id!, true);
+      turns.current[id!] = turns.current[id!] ?? Date.now();
+    }
     armWatchdog(id!);
     try {
       // The harness queues prompts sent mid-turn (inbox), so sending while
       // busy is safe — it runs right after the current turn.
-      await client.session.prompt({ sessionID: id!, text: t } as any);
-      if (wasBusy) say("Queued — runs after the current turn finishes.");
-      await loadThread(id!);
+      const res: any = await client.session.prompt({ sessionID: id!, text: t } as any);
+      const inboxID: string | undefined = res?.id ?? res?.data?.id;
+      const queued: boolean = (res?.delivery ?? res?.data?.delivery) === "queue" || wasBusy;
+      if (inboxID) {
+        replacePending((p) => {
+          const list = p[id!];
+          if (!list) return p;
+          return { ...p, [id!]: list.map((x) => (x.key === pk ? { ...x, inboxID, queued: x.queued || queued } : x)) };
+        });
+        // Delivery can beat the HTTP response — fold it in that case too.
+        if (deliveredInbox.current.has(inboxID)) foldDelivered(id!, inboxID);
+      }
+      if (queued) say("Queued — runs right after the current step.");
     } catch (e) {
       clearWatchdog(id!);
       if (!wasBusy) setSessionBusy(id!, false);
+      replacePending((p) => {
+        const list = (p[id!] ?? []).filter((x) => x.key !== pk);
+        const n = { ...p };
+        if (list.length) n[id!] = list;
+        else delete n[id!];
+        return n;
+      });
       say(`Send failed: ${(e as Error).message}`);
-      if (id) loadThread(id);
       return;
     }
   };
@@ -532,63 +732,171 @@ export function App() {
     const ctl = new AbortController();
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+    /** Fill chips/hint on a live tool line once its input is known. */
+    const applyToolInput = (sid: string, id: string, raw: any) => {
+      let input = raw;
+      if (typeof raw === "string") {
+        try { input = JSON.parse(raw); } catch { input = undefined; }
+      }
+      if (input === undefined) return;
+      mutFeed(sid, (list) => {
+        const i = list.findIndex((x) => x.kind === "tool" && x.key === id);
+        if (i === -1) return list;
+        const cur = list[i] as Extract<LiveEntry, { kind: "tool" }>;
+        const refs = mcpRefs({ input });
+        const text = `${cur.name}${toolDetail(cur.name, input, refs)}`;
+        if (refs.join(" ") === cur.refs.join(" ") && text === cur.text) return list;
+        const n = list.slice();
+        n[i] = { ...cur, refs, text };
+        return n;
+      });
+    };
+
     const handleEvent = (e: any) => {
       const t: string = e.type ?? "";
       const d: any = e.data ?? {};
       const sid: string = d.sessionID ?? "";
       if (sid && ACTIVITY_EVENTS.has(t)) armWatchdog(sid);
+      const isActive = () => sid === activeIDRef.current;
       switch (t) {
         case "session.execution.started":
           if (sid) {
+            turns.current[sid] = Date.now();
             setSessionBusy(sid, true);
             armWatchdog(sid);
+            if (isActive()) {
+              // New turn: the stored thread is authoritative up to now.
+              dropFeed(sid);
+              loadThread(sid);
+            }
           }
           break;
         case "session.execution.succeeded":
         case "session.execution.failed":
         case "session.execution.interrupted":
-        case "session.idle":
-          if (sid) {
-            clearWatchdog(sid);
-            setSessionBusy(sid, false);
-            if (sid === activeIDRef.current) {
-              // Turn over — stored messages are authoritative; drop any
-              // streaming buffers so they can't linger as duplicate bubbles.
-              setLive({});
-              loadThread(sid);
-              loadPerms(sid);
-            } else {
-              // Finished while you were elsewhere — show a roster dot.
-              setUnread((m) => (m[sid] ? m : { ...m, [sid]: true }));
-            }
-          }
-          refreshSessions();
-          break;
-        case "session.text.delta":
-          if (sid === activeIDRef.current && d.assistantMessageID && d.delta) {
-            const id = d.assistantMessageID as string;
-            const chunk = d.delta as string;
-            setLive((prev) => ({ ...prev, [id]: (prev[id] ?? "") + chunk }));
-          }
-          break;
-        case "session.text.ended": {
-          const mid = d.assistantMessageID as string | undefined;
-          if (sid === activeIDRef.current) {
-            // The finished message now lives in the stored thread; its live
-            // buffer is keyed by message id (stored parts use part ids), so it
-            // would otherwise be re-rendered as a duplicate.
-            if (mid) {
-              setLive((prev) => {
-                if (!(mid in prev)) return prev;
-                const n = { ...prev };
-                delete n[mid];
-                return n;
+        case "session.idle": {
+          if (!sid) break;
+          if (t === "session.execution.failed" && isActive()) say("That turn failed — see the thread for details.");
+          clearWatchdog(sid);
+          delete turns.current[sid];
+          setSessionBusy(sid, false);
+          if (isActive()) {
+            // Settle: fold the live feed into the thread first so nothing
+            // blinks out while the harness finishes persisting, then reload
+            // (the stored thread is authoritative from here).
+            const feed = liveRef.current[sid] ?? [];
+            dropFeed(sid);
+            if (feed.length) {
+              setMsgs((prev) => {
+                const seenText = new Set(prev.filter((m) => m.role === "assistant").map((m) => m.text.trim()));
+                const seenTools = new Set(prev.filter((m) => m.role === "tool").map((m) => m.key));
+                const add: ChatMsg[] = [];
+                for (const x of feed) {
+                  if (x.kind === "text") {
+                    if (!x.text.trim() || seenText.has(x.text.trim())) continue;
+                    add.push({ role: "assistant", text: x.text, key: `live-${sid}-${x.key}`, time: Date.now(), agent: activeBotRef.current ?? undefined });
+                  } else {
+                    if (seenTools.has(x.key)) continue;
+                    add.push({ role: "tool", text: x.text, key: `live-${sid}-${x.key}`, time: Date.now(), agent: activeBotRef.current ?? undefined, mcps: x.refs, tool: x.name, err: x.state === "error" });
+                  }
+                }
+                return add.length ? [...prev, ...add] : prev;
               });
             }
             loadThread(sid);
+            loadPerms(sid);
+          } else {
+            // Finished while you were elsewhere — show a roster dot.
+            setUnread((m) => (m[sid] ? m : { ...m, [sid]: true }));
           }
+          refreshSessions();
           break;
         }
+        case "session.text.delta":
+          if (isActive() && d.assistantMessageID && d.delta) {
+            const key = `${d.assistantMessageID}:${d.ordinal ?? 0}`;
+            mutFeed(sid, (list) => {
+              const i = list.findIndex((x) => x.key === key);
+              if (i === -1) return [...list, { kind: "text", key, text: String(d.delta) }];
+              const n = list.slice();
+              n[i] = { kind: "text", key, text: (list[i] as Extract<LiveEntry, { kind: "text" }>).text + d.delta };
+              return n;
+            });
+          }
+          break;
+        case "session.text.ended": {
+          if (!isActive()) break;
+          const key = `${d.assistantMessageID ?? "m"}:${d.ordinal ?? 0}`;
+          const text = String(d.text ?? "");
+          mutFeed(sid, (list) => {
+            const i = list.findIndex((x) => x.key === key);
+            if (i === -1) return text ? [...list, { kind: "text", key, text }] : list;
+            const n = list.slice();
+            n[i] = { kind: "text", key, text: text || (list[i] as Extract<LiveEntry, { kind: "text" }>).text };
+            return n;
+          });
+          break;
+        }
+        case "session.tool.input.started":
+          if (isActive() && d.id) {
+            const key = d.id as string;
+            const name: string = d.name ?? "tool";
+            mutFeed(sid, (list) =>
+              list.some((x) => x.kind === "tool" && x.key === key)
+                ? list
+                : [...list, { kind: "tool", key, name, text: name, refs: [], state: "running" }],
+            );
+          }
+          break;
+        case "session.tool.input.ended":
+          if (isActive() && d.id) applyToolInput(sid, d.id, d.text);
+          break;
+        case "session.tool.called":
+          if (isActive() && d.id) applyToolInput(sid, d.id, d.input);
+          break;
+        case "session.tool.success":
+        case "session.tool.failed":
+          if (isActive() && d.id) {
+            const key = d.id as string;
+            const state: "done" | "error" = t === "session.tool.failed" ? "error" : "done";
+            mutFeed(sid, (list) => {
+              const i = list.findIndex((x) => x.kind === "tool" && x.key === key);
+              if (i === -1) return list;
+              const n = list.slice();
+              n[i] = { ...(list[i] as Extract<LiveEntry, { kind: "tool" }>), state };
+              return n;
+            });
+          }
+          break;
+        case "session.inbox.delivered": {
+          // The prompt left the queue and joined the conversation — fold its
+          // bubble in now (no reload: the in-flight assistant message would
+          // race the live feed).
+          const inboxID: string | undefined = d.inboxID;
+          if (!inboxID) break;
+          deliveredInbox.current.add(inboxID);
+          if (!foldDelivered(sid, inboxID) && deliveredInbox.current.size > 500) deliveredInbox.current.clear();
+          break;
+        }
+        case "session.inbox.cancelled":
+          if (d.inboxID) {
+            deliveredInbox.current.delete(d.inboxID);
+            replacePending((p) => {
+              let changed = false;
+              const n: Record<string, ChatMsg[]> = { ...p };
+              for (const k of Object.keys(n)) {
+                const kept = n[k].filter((x) => x.inboxID !== d.inboxID);
+                if (kept.length !== n[k].length) {
+                  changed = true;
+                  if (kept.length) n[k] = kept;
+                  else delete n[k];
+                }
+              }
+              return changed ? n : p;
+            });
+            if (isActive()) say("Queued message cancelled.");
+          }
+          break;
         case "permission.asked":
         case "permission.replied":
           // Keep the whole team's "needs you" state accurate, not just the
@@ -638,6 +946,7 @@ export function App() {
         refreshSessions();
         const sid = activeIDRef.current;
         if (sid) {
+          dropFeed(sid);
           loadThread(sid);
           loadPerms(sid);
         }
@@ -682,7 +991,7 @@ export function App() {
   }, []);
 
   // Stick to the bottom while streaming — but only when already near it, so
-  // reading back through history doesn't get yanked down by every poll.
+  // reading back through history doesn't get yanked down by every update.
   const lastScrollSession = useRef<string | null>(null);
   useEffect(() => {
     const el = threadRef.current;
@@ -691,21 +1000,17 @@ export function App() {
     lastScrollSession.current = activeID;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
     if (switched || nearBottom) el.scrollTop = el.scrollHeight;
-  }, [msgs, busySessions, activeID]);
+  }, [msgs, busySessions, activeID, live, pending]);
 
   const busy = !!(activeID && busySessions[activeID]);
 
-  // Polling fallback while the active bot works: guarantees replies appear
-  // even if a stream event is missed.
+  // Elapsed clock for the working row — ticks only while a bot is working.
   useEffect(() => {
-    if (!busy || !activeID) return;
-    const iv = setInterval(() => {
-      loadThread(activeID);
-      loadPerms(activeID);
-    }, 3000);
+    if (!busy) return;
+    setNow(Date.now());
+    const iv = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, activeID]);
+  }, [busy]);
 
   const autogrow = () => {
     const ta = taRef.current;
@@ -735,54 +1040,131 @@ export function App() {
       write: "write a file", patch: "patch files",
     }[a] ?? a);
 
-  const liveKeys = new Set(msgs.map((m) => m.key));
-  const liveEntries = Object.entries(live).filter(([k, v]) => v && !liveKeys.has(k));
-  const liveSender = senderOf({ role: "assistant", text: "", key: "live", agent: activeBot ?? undefined });
+  // Optimistic "you" bubbles still on their way into the stored thread.
+  const pendList = (activeID && pending[activeID]) || [];
+  const pendTop = pendList.filter((p) => !p.queued);
+  const pendQueued = pendList.filter((p) => p.queued);
 
-  // Consecutive identical tool calls (a bot retrying in a loop) collapse into
-  // one line with an ×N badge instead of painting the same card over and over.
-  const collapsed: ChatMsg[] = [];
+  // Live turn feed for the chat on screen, minus strokes the stored thread
+  // already covers (mid-turn resyncs can leave both present).
+  const liveKeys = new Set(msgs.map((m) => m.key));
+  const storedTexts = new Set(msgs.filter((m) => m.role === "assistant").map((m) => m.text.trim()));
+  const feed = ((activeID && live[activeID]) || []).filter((x) =>
+    x.kind === "text" ? !!x.text.trim() && !storedTexts.has(x.text.trim()) : !liveKeys.has(x.key));
+
+  // Group the conversation into display rows: messages stand alone, runs of
+  // tool calls become one "N steps" line (a browser task can fire dozens).
+  const rows: DisplayRow[] = [];
+  const pushTool = (it: ToolItem) => {
+    const last = rows[rows.length - 1];
+    if (last?.kind === "tools") {
+      const prev = last.items[last.items.length - 1];
+      if (prev.text === it.text && prev.refs.join(" ") === it.refs.join(" ")) {
+        last.items[last.items.length - 1] = { ...prev, rep: (prev.rep ?? 1) + 1 };
+      } else last.items.push(it);
+      return;
+    }
+    rows.push({ kind: "tools", key: `tg-${it.key}`, items: [it] });
+  };
   for (const m of msgs) {
-    const prev = collapsed[collapsed.length - 1];
-    if (m.role === "tool" && prev?.role === "tool" && prev.text === m.text && (prev.mcps ?? []).join(" ") === (m.mcps ?? []).join(" ")) {
-      prev.rep = (prev.rep ?? 1) + 1;
-    } else collapsed.push({ ...m });
+    if (m.role === "tool") {
+      pushTool({
+        key: m.key,
+        name: m.tool ?? m.text.split(" ")[0] ?? "tool",
+        text: m.text,
+        refs: m.mcps ?? [],
+        state: m.err ? "error" : "done",
+        rep: m.rep,
+      });
+    } else rows.push({ kind: "msg", m, tkey: m.key });
+  }
+  for (const x of feed) {
+    if (x.kind === "text") {
+      rows.push({
+        kind: "msg",
+        m: { role: "assistant", text: x.text, key: `f-${x.key}`, agent: activeBot ?? undefined },
+        tkey: `f-${x.key}`,
+        streamed: true,
+      });
+    } else {
+      pushTool({ key: x.key, name: x.name, text: x.text, refs: x.refs, state: x.state });
+    }
   }
 
   let lastDay = "";
   let lastSender = "";
   const stream: React.ReactNode[] = [];
-  collapsed.forEach((m) => {
-    const day = dayLabel(m.time);
+  rows.forEach((row) => {
+    const day = row.kind === "msg" ? dayLabel(row.m.time) : "";
     if (day && day !== lastDay) {
       lastDay = day;
       lastSender = "";
-      stream.push(<div key={`day-${m.key}`} className="day-div"><span>{day}</span></div>);
+      stream.push(<div key={`day-${row.kind === "msg" ? row.tkey : row.key}`} className="day-div"><span>{day}</span></div>);
     }
-    if (m.role === "tool") {
+    if (row.kind === "tools") {
+      const single = row.items.length === 1 ? row.items[0] : null;
+      if (single) {
+        stream.push(
+          <div key={row.key} className="slack-msg compact">
+            <div className="slack-body">
+              <span className={`tool-line${single.state === "error" ? " err" : ""}`}>
+                {single.state === "running" ? <span className="run-dot" /> : <IconActivity size={12} />} {single.text}
+                {!!single.refs.length && (
+                  <span className="mcp-refs">
+                    {single.refs.map((r) => <span key={r} className="mcp-ref">{r}</span>)}
+                  </span>
+                )}
+                {!!single.rep && single.rep > 1 && <span className="rep-badge">×{single.rep}</span>}
+              </span>
+            </div>
+          </div>,
+        );
+        return;
+      }
+      const open = openClusters.has(row.key);
+      const running = row.items.some((x) => x.state === "running");
+      const anyErr = row.items.some((x) => x.state === "error");
+      const lastIt = row.items[row.items.length - 1];
       stream.push(
-        <div key={m.key} className="slack-msg compact">
+        <div key={row.key} className="slack-msg compact">
           <div className="slack-body">
-            <span className="tool-line">
-              <IconActivity size={12} /> {m.text}
-              {!!m.mcps?.length && (
-                <span className="mcp-refs">
-                  {m.mcps.map((r) => <span key={r} className="mcp-ref">{r}</span>)}
-                </span>
-              )}
-              {!!m.rep && m.rep > 1 && <span className="rep-badge">×{m.rep}</span>}
-            </span>
+            <button
+              className={`tool-cluster${open ? " open" : ""}${anyErr ? " err" : ""}`}
+              onClick={() => toggleCluster(row.key)}
+              title={open ? "Hide the steps" : "Show every step"}
+            >
+              {running ? <span className="run-dot" /> : <IconActivity size={12} />}
+              <span>{row.items.length} steps</span>
+              <span className="tc-hint">{toolPhrase(lastIt.name, lastIt.refs)}</span>
+              <IconChevronDown size={12} className="chev" />
+            </button>
+            {open && (
+              <div className="tool-steps">
+                {row.items.map((x, i) => (
+                  <span key={`${x.key}-${i}`} className={`tool-line${x.state === "error" ? " err" : ""}`}>
+                    <IconActivity size={11} /> {x.text}
+                    {!!x.refs.length && (
+                      <span className="mcp-refs">
+                        {x.refs.map((r) => <span key={r} className="mcp-ref">{r}</span>)}
+                      </span>
+                    )}
+                    {!!x.rep && x.rep > 1 && <span className="rep-badge">×{x.rep}</span>}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>,
       );
       return;
     }
+    const { m, streamed } = row;
     const s = senderOf(m);
     const skey = `${m.role}:${s.name}`;
     const compact = skey === lastSender;
     lastSender = skey;
     stream.push(
-      <div key={m.key} className={`slack-msg ${compact ? "compact" : ""}`}>
+      <div key={row.tkey} className={`slack-msg ${compact ? "compact" : ""}`}>
         {!compact ? (
           <div className="avatar">
             {s.user ? <IconUser size={22} /> : <BotAvatar seed={s.name} color={s.col} size={32} />}
@@ -794,13 +1176,13 @@ export function App() {
           {!compact && (
             <div className="slack-head">
               <strong>{s.name}</strong>
-              <span className="time">{fmtTime(m.time)}</span>
+              <span className="time">{streamed ? "now" : fmtTime(m.time)}</span>
             </div>
           )}
           {m.role === "user"
             ? <div className="slack-text plain">{m.text}</div>
             : <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />}
-          {m.role === "assistant" && (
+          {m.role === "assistant" && !streamed && (
             <div className="msg-actions">
               <button onClick={() => copy(m.text, m.key)} title="Copy">{votes[`c:${m.key}`] ? <IconCheck size={14} /> : <IconCopy size={14} />}</button>
               <button className={votes[m.key] === 1 ? "lit" : ""} onClick={() => vote(m.key, 1)} title="Good response"><IconThumbsUp size={14} /></button>
@@ -811,6 +1193,33 @@ export function App() {
       </div>,
     );
   });
+
+  // The "working" row — current activity + elapsed time. Clusters stay
+  // collapsed so long tool runs don't flood the chat; this row narrates
+  // what's happening right now.
+  let runningTool: ToolItem | undefined;
+  for (const row of rows) {
+    if (row.kind !== "tools") continue;
+    for (const it of row.items) if (it.state === "running") runningTool = it;
+  }
+  const streamedText = feed.some((x) => x.kind === "text");
+  const activity = runningTool ? toolPhrase(runningTool.name, runningTool.refs) : streamedText ? "writing" : "thinking";
+  const startT = activeID ? turns.current[activeID] : undefined;
+  const elapsed = busy && startT ? fmtClock(now - startT) : "";
+
+  const renderPending = (p: ChatMsg) => (
+    <div key={p.key} className="slack-msg">
+      <div className="avatar"><IconUser size={22} /></div>
+      <div className="slack-body">
+        <div className="slack-head">
+          <strong>You</strong>
+          <span className="time">{fmtTime(p.time)}</span>
+          {p.queued && <span className="queued-tag">queued</span>}
+        </div>
+        <div className="slack-text plain">{p.text}</div>
+      </div>
+    </div>
+  );
 
   const composer = (
     <div className="composer">
@@ -825,12 +1234,18 @@ export function App() {
       />
       <div className="composer-bar">
         <span className="dim" style={{ paddingLeft: 8 }}>
-          {busy ? "Working — your next message queues up" : "Replies stream live · bot remembers skills you teach it"}
+          {busy ? "Working — send more and it runs right after" : "Replies stream live · bot remembers skills you teach it"}
         </span>
         <span className="spacer" />
-        {busy
-          ? <button className="send-btn ready" onClick={interrupt} title="Stop"><IconStop size={13} /></button>
-          : <button className={`send-btn ${input.trim() ? "ready" : ""}`} onClick={() => send()} disabled={!input.trim() || !activeBot} title="Send"><IconArrowUp size={16} /></button>}
+        {busy && <button className="send-btn stop" onClick={interrupt} title="Stop"><IconStop size={13} /></button>}
+        <button
+          className={`send-btn ${input.trim() ? "ready" : ""}`}
+          onClick={() => send()}
+          disabled={!input.trim() || !activeBot}
+          title={busy ? "Queue this message" : "Send"}
+        >
+          <IconArrowUp size={16} />
+        </button>
       </div>
     </div>
   );
@@ -1015,7 +1430,7 @@ export function App() {
                 ))}
               </div>
             )}
-            {msgs.length === 0 && !busy ? (
+            {msgs.length === 0 && !busy && pendList.length === 0 ? (
               <div className="hero">
                 <div className="hero-inner">
                   <BotAvatar seed={activeBot ?? "?"} color={meta?.color} size={56} />
@@ -1030,27 +1445,20 @@ export function App() {
               </div>
             ) : (
               <>
-                <div className="thread" ref={threadRef}>{stream}
-                  {liveEntries.map(([k, text]) => (
-                    <div key={k} className="slack-msg">
-                      <div className="avatar" >
-                        {liveSender.user ? <IconUser size={22} /> : <BotAvatar seed={liveSender.name} color={liveSender.col} size={32} />}
-                      </div>
+                <div className="thread" ref={threadRef}>
+                  {stream}
+                  {pendTop.map(renderPending)}
+                  {busy && (
+                    <div className="slack-msg compact" key="working">
+                      <div className="avatar-ghost" />
                       <div className="slack-body">
-                        <div className="slack-head">
-                          <strong>{liveSender.name}</strong>
-                          <span className="time">now</span>
-                        </div>
-                        <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+                        <span className="working-label">
+                          <span className="run-dot" />{activity}{elapsed ? ` · ${elapsed}` : ""}
+                        </span>
                       </div>
-                    </div>
-                  ))}
-                  {busy && msgs[msgs.length - 1]?.role === "user" && liveEntries.length === 0 && (
-                    <div className="slack-msg">
-                      <div className="avatar"><span className="spinner" /></div>
-                      <div className="slack-body"><span className="dots"><i /><i /><i /></span></div>
                     </div>
                   )}
+                  {pendQueued.map(renderPending)}
                 </div>
                 <div style={{ width: "min(760px, 100%)", margin: "0 auto", padding: "0 24px 10px" }}>
                   {composer}
@@ -1102,7 +1510,7 @@ export function App() {
                 setActiveSession(null, null);
                 setMsgs([]);
                 setPerms([]);
-                setLive({});
+                replaceLive(() => ({}));
               }
             }}
             onRenamed={(from, to) => {
