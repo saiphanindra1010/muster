@@ -14,7 +14,7 @@
       "id": "playwright",
       "kind": "mcp",
       "name": "Playwright (browser)",
-      "description": "Drive a real browser: navigate, click, type, screenshot and scrape web pages.",
+      "description": "Drive a real browser: navigate, click, type, screenshot and scrape web pages. Install only one browser connector at a time.",
       "tags": ["browser", "automation"],
       "homepage": "https://github.com/microsoft/playwright-mcp",
       "mcp": {
@@ -29,7 +29,7 @@
       "id": "chrome-devtools",
       "kind": "mcp",
       "name": "Chrome DevTools (browser)",
-      "description": "Google's Chrome automation for bots: reliable click/type/navigate with built-in waits, plus console, network and performance inspection. No sign-in needed.",
+      "description": "Google's Chrome automation for bots: reliable click/type/navigate with built-in waits, plus console, network and performance inspection. No sign-in needed. Install only one browser connector at a time.",
       "tags": ["browser", "automation", "debugging"],
       "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
       "mcp": {
@@ -184,6 +184,13 @@
       "name": "Research brief",
       "description": "Compile a sourced, decision-ready brief on any topic.",
       "tags": ["research"]
+    },
+    {
+      "id": "browser-craft",
+      "kind": "skill",
+      "name": "Browser craft",
+      "description": "How to browse fast and accurately: batch flows, extract with scripts, wait on conditions, never loop.",
+      "tags": ["browser", "automation"]
     }
   ]
 }

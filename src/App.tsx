@@ -15,7 +15,7 @@ import { Marketplace } from "./Marketplace";
 type Session = { id: string; kind?: string; bot?: string };
 type ChatMsg = {
   role: "user" | "assistant" | "tool"; text: string; key: string;
-  time?: number; agent?: string;
+  time?: number; agent?: string; mcps?: string[]; rep?: number;
 };
 type ModelOpt = { key: string; providerID: string; id: string };
 type BotMeta = { id: string; color?: string; description?: string };
@@ -44,6 +44,23 @@ const CATALOG_EVENTS = new Set([
   "mcp.status.changed", "mcp.resources.changed",
   "model.updated", "provider.updated", "worktree.resolved", "project.updated",
 ]);
+
+/** Where a tool call actually goes: MCP calls bots make from execute code
+ * (`tools["chrome-devtools"].navigate_page(...)`). Rendered as chips on the
+ * tool line so it's visible which connector a call is routed to. */
+function mcpRefs(part: any): string[] {
+  const input = part?.input ?? part?.args ?? part?.state?.input;
+  let code = "";
+  if (typeof input?.code === "string") code = input.code;
+  else if (typeof input === "string") code = input;
+  else if (input) { try { code = JSON.stringify(input); } catch {} }
+  const calls = new Set<string>();
+  const servers = new Set<string>();
+  for (const m of code.matchAll(/tools\s*\[\s*["'`]([^"'`\n]+)["'`]\s*\]\s*\.\s*([A-Za-z0-9_-]+)/g)) calls.add(`${m[1]}.${m[2]}`);
+  for (const m of code.matchAll(/\btools\s*\.\s*([A-Za-z0-9_-]+)\s*\.\s*([A-Za-z0-9_-]+)/g)) calls.add(`${m[1]}.${m[2]}`);
+  if (!calls.size) for (const m of code.matchAll(/tools\s*\[\s*["'`]([^"'`\n]+)["'`]\s*\]/g)) servers.add(m[1]);
+  return [...(calls.size ? calls : servers)].slice(0, 6);
+}
 
 /** Tiny dependency-free markdown-lite: code fences, inline code, bold, paragraphs. */
 export function mdLite(src: string): string {
@@ -271,7 +288,19 @@ export function App() {
             if (p.type === "text" && p.text) out.push({ role: "assistant", text: p.text, key: p.id ?? `${m.id}-${out.length}`, time: m.time?.created ?? m.time?.streamed, agent: m.agent });
             // NOTE: reasoning parts are the model's internal chain-of-thought —
             // deliberately not rendered. Only final text + tool activity show.
-            else if (p.type === "tool") out.push({ role: "tool", text: `${p.name ?? p.tool ?? "tool"} ${((p.input ?? p.args ?? "") && JSON.stringify(p.input ?? p.args).slice(0, 200)) || ""}`, key: p.id ?? `${m.id}-${out.length}`, time: m.time?.created, agent: m.agent });
+            else if (p.type === "tool") {
+              const refs = mcpRefs(p);
+              const input = p.input ?? p.args ?? p.state?.input;
+              const detail = refs.length || !input ? "" : ` ${JSON.stringify(input).slice(0, 200)}`;
+              out.push({
+                role: "tool",
+                text: `${p.name ?? p.tool ?? "tool"}${detail}`,
+                key: p.id ?? `${m.id}-${out.length}`,
+                time: m.time?.created,
+                agent: m.agent,
+                mcps: refs,
+              });
+            }
           }
         }
       }
@@ -677,10 +706,20 @@ export function App() {
   const liveEntries = Object.entries(live).filter(([k, v]) => v && !liveKeys.has(k));
   const liveSender = senderOf({ role: "assistant", text: "", key: "live", agent: activeBot ?? undefined });
 
+  // Consecutive identical tool calls (a bot retrying in a loop) collapse into
+  // one line with an ×N badge instead of painting the same card over and over.
+  const collapsed: ChatMsg[] = [];
+  for (const m of msgs) {
+    const prev = collapsed[collapsed.length - 1];
+    if (m.role === "tool" && prev?.role === "tool" && prev.text === m.text && (prev.mcps ?? []).join(" ") === (m.mcps ?? []).join(" ")) {
+      prev.rep = (prev.rep ?? 1) + 1;
+    } else collapsed.push({ ...m });
+  }
+
   let lastDay = "";
   let lastSender = "";
   const stream: React.ReactNode[] = [];
-  msgs.forEach((m) => {
+  collapsed.forEach((m) => {
     const day = dayLabel(m.time);
     if (day && day !== lastDay) {
       lastDay = day;
@@ -690,7 +729,17 @@ export function App() {
     if (m.role === "tool") {
       stream.push(
         <div key={m.key} className="slack-msg compact">
-          <div className="slack-body"><span className="tool-line"><IconActivity size={12} /> {m.text}</span></div>
+          <div className="slack-body">
+            <span className="tool-line">
+              <IconActivity size={12} /> {m.text}
+              {!!m.mcps?.length && (
+                <span className="mcp-refs">
+                  {m.mcps.map((r) => <span key={r} className="mcp-ref">{r}</span>)}
+                </span>
+              )}
+              {!!m.rep && m.rep > 1 && <span className="rep-badge">×{m.rep}</span>}
+            </span>
+          </div>
         </div>,
       );
       return;

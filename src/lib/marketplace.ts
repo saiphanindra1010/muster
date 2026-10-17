@@ -21,6 +21,7 @@ import {
 import releaseNotesSkill from "../marketplace-skills/release-notes/SKILL.md?raw";
 import meetingNotesSkill from "../marketplace-skills/meeting-notes/SKILL.md?raw";
 import researchBriefSkill from "../marketplace-skills/research-brief/SKILL.md?raw";
+import browserCraftSkill from "../marketplace-skills/browser-craft/SKILL.md?raw";
 
 export type MarketKind = "mcp" | "plugin" | "skill";
 
@@ -50,6 +51,7 @@ const SKILL_BODIES: Record<string, string> = {
   "release-notes": releaseNotesSkill,
   "meeting-notes": meetingNotesSkill,
   "research-brief": researchBriefSkill,
+  "browser-craft": browserCraftSkill,
 };
 
 export function catalog(): MarketItem[] {
