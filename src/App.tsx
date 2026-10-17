@@ -48,7 +48,7 @@ const CATALOG_EVENTS = new Set([
 ]);
 
 /** Where a tool call actually goes: MCP calls bots make from execute code
- * (`tools["chrome-devtools"].navigate_page(...)`). Rendered as chips on the
+ * (`tools["agent-browser"].agent_browser_open(...)`). Rendered as chips on the
  * tool line so it's visible which connector a call is routed to. */
 function mcpRefs(part: any): string[] {
   const input = part?.input ?? part?.args ?? part?.state?.input;

@@ -46,6 +46,26 @@
       }
     },
     {
+      "id": "agent-browser",
+      "kind": "mcp",
+      "name": "Agent Browser (browser)",
+      "description": "Vercel's agent-first browser as a connector: real headed Chrome, accessibility snapshots with clickable refs, wait-on-condition helpers, a fast read-only mode for pages, and a persistent profile so logins survive restarts. Pinned to a verified version. Install only one browser connector at a time.",
+      "tags": ["browser", "automation"],
+      "homepage": "https://github.com/vercel-labs/agent-browser",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "agent-browser@0.39.1", "mcp", "--tools", "core"],
+          "environment": {
+            "AGENT_BROWSER_HEADED": "1",
+            "AGENT_BROWSER_NO_WEBMCP": "1",
+            "AGENT_BROWSER_PROFILE": "~/.openchat-bots/browser-profile"
+          },
+          "cwd": "."
+        }
+      }
+    },
+    {
       "id": "filesystem",
       "kind": "mcp",
       "name": "Filesystem (workspace)",
@@ -189,7 +209,7 @@
       "id": "browser-craft",
       "kind": "skill",
       "name": "Browser craft",
-      "description": "How to browse fast and accurately: batch flows, extract with scripts, wait on conditions, never loop.",
+      "description": "How to browse fast and accurately: one block per flow, extract with expressions, wait on conditions, never loop.",
       "tags": ["browser", "automation"]
     }
   ]
