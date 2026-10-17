@@ -1,5 +1,5 @@
 {
-  "name": "@openchat_bot/server",
+  "name": "@muster/server",
   "private": true,
   "type": "module",
   "scripts": {

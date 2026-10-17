@@ -1,4 +1,4 @@
-# openchat_bot — personal bot coworkers on a local OpenCode harness
+# Muster — personal bot coworkers on a local OpenCode harness
 
 Just bots. Sidebar lists your bots, click one to chat. Each bot is an OpenCode
 agent (own system prompt, skills, MCP permissions) executed by a headless
@@ -6,7 +6,7 @@ agent (own system prompt, skills, MCP permissions) executed by a headless
 or, in the desktop app, inside the OS app-data dir.
 
 ```
-openchat_bot/
+muster/
 ├── run.sh                # one command: harness + UI + open browser
 ├── templates/workspace/  # starter workspace files, seeded on first boot
 ├── data/                 # PORTABLE DATAFOLDER (contents gitignored)
@@ -16,9 +16,19 @@ openchat_bot/
 │   └── state/            # XDG_STATE_HOME + harness-token-<port>
 ├── opencode.jsonc        # base harness config (model, MCP, websearch, permissions)
 ├── server/src/launcher.ts# Bun launcher: sets env -> spawns `opencode serve`
+├── docs/                 # architecture, development, design, bots
 ├── src/                  # React/Vite UI (uses @opencode/client)
 └── src-tauri/            # desktop shell (Rust): spawns a bundled harness
 ```
+
+## Docs
+
+Deeper documentation lives in [`docs/`](docs/README.md):
+
+- [architecture.md](docs/architecture.md) — processes, data flow, the harness protocol, storage, auth
+- [development.md](docs/development.md) — setup, dev loop, sandboxing, verification, builds
+- [design.md](docs/design.md) — design language, tokens, themes, chat anatomy
+- [bots.md](docs/bots.md) — bot files, personas, skills, MCP rules, the marketplace
 
 ## 1. Prereqs
 
@@ -37,7 +47,7 @@ openchat_bot/
 ## 2. Run (browser, one command)
 
 ```sh
-cd /media/phani/DriveE/openchat_bot
+cd /media/phani/DriveE/muster
 ./run.sh
 # -> headless harness + web UI over the desktop app's data folder,
 #    opens http://127.0.0.1:1420. Ctrl+C stops everything.
@@ -46,8 +56,8 @@ cd /media/phani/DriveE/openchat_bot
 `run.sh` waits for the harness token, exports `VITE_OPENCODE_TOKEN` /
 `VITE_WORKSPACE_DIR`, waits for :1420, then `xdg-open`s the browser. Same bots
 and chat history as the desktop app (see §4). Override the harness port with
-`OPENCHAT_PORT=4099 ./run.sh`, or use a throwaway sandbox with
-`OPENCHAT_DATA_DIR=./data ./run.sh`. Manual equivalent (two terminals) is
+`MUSTER_PORT=4099 ./run.sh`, or use a throwaway sandbox with
+`MUSTER_DATA_DIR=./data ./run.sh`. Manual equivalent (two terminals) is
 `bun run start` + the export line it prints, then `bun run dev:web`.
 
 Auth note (verified against opencode v2.0.28): `opencode serve` guards every
@@ -64,7 +74,7 @@ System deps are installed on this machine (libwebkit2gtk-4.1-dev, libgtk-3-dev,
 libayatana-appindicator3-dev, librsvg2-dev, libssl-dev, ...). Build and run:
 
 ```sh
-cd /media/phani/DriveE/openchat_bot
+cd /media/phani/DriveE/muster
 bun run tauri:dev    # desktop window, hot-reload UI, harness auto-started
 bun run tauri:build  # .deb in src-tauri/target/release/bundle/deb/
 ```
@@ -73,7 +83,7 @@ How it works:
 
 - Rust picks a **free loopback port** at startup (never clashes with a dev
   harness on 4096), spawns the bundled `opencode` sidecar with all state under
-  `<appData>/com.openchat.bot/openchat/data`, and captures the per-boot password
+  `<appData>/com.muster.app/muster/data`, and captures the per-boot password
   from its stdout.
 - The UI asks the shell for the harness URL, password and workspace through the
   `harness_info` / `harness_token` commands at boot — no tokens baked into the
@@ -96,19 +106,19 @@ same bots and chat history show up in both:
 
 | Mode | Data root |
 | --- | --- |
-| `./run.sh` (browser) | `~/.local/share/com.openchat.bot/openchat/data` |
-| Desktop app | `~/.local/share/com.openchat.bot/openchat/data` |
-| Sandbox | `OPENCHAT_DATA_DIR=./data ./run.sh` (repo-local, throwaway) |
+| `./run.sh` (browser) | `~/.local/share/com.muster.app/muster/data` |
+| Desktop app | `~/.local/share/com.muster.app/muster/data` |
+| Sandbox | `MUSTER_DATA_DIR=./data ./run.sh` (repo-local, throwaway) |
 
-`server/src/launcher.ts` resolves `OPENCHAT_DATA_DIR` (default: the folder
+`server/src/launcher.ts` resolves `MUSTER_DATA_DIR` (default: the folder
 above; `$XDG_DATA_HOME` is honored) and exports, **before** spawning
 `opencode serve`:
 
 ```sh
-OPENCHAT_DATA_DIR=<XDG_DATA_HOME>/com.openchat.bot/openchat/data
-XDG_DATA_HOME=$OPENCHAT_DATA_DIR/share
-XDG_CONFIG_HOME=$OPENCHAT_DATA_DIR/config
-XDG_STATE_HOME=$OPENCHAT_DATA_DIR/state
+MUSTER_DATA_DIR=<XDG_DATA_HOME>/com.muster.app/muster/data
+XDG_DATA_HOME=$MUSTER_DATA_DIR/share
+XDG_CONFIG_HOME=$MUSTER_DATA_DIR/config
+XDG_STATE_HOME=$MUSTER_DATA_DIR/state
 OPENCODE_DB=$XDG_DATA_HOME/opencode/opencode.db
 # optional: OPENCODE_DISABLE_PRUNE=1  # keep all sessions (OpenCode prunes by default)
 ```

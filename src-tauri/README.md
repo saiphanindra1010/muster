@@ -3,7 +3,7 @@
 The desktop app owns the harness. `src/main.rs`:
 
 1. Picks a **free loopback port** (so a dev harness on 4096 never clashes).
-2. Creates `<appData>/com.openchat.bot/openchat/data/{share,config,state,workspace}`
+2. Creates `<appData>/com.muster.app/muster/data/{share,config,state,workspace}`
    and seeds `templates/workspace/` into the workspace (copy-if-missing).
 3. Spawns the bundled `opencode` sidecar (`binaries/opencode-<target-triple>`,
    staged with `cp "$(which opencode)" src-tauri/binaries/opencode-$(rustc -vV |

@@ -1,4 +1,4 @@
-/* openchat — Tailwind v4 + hand-rolled component classes on shared tokens.
+/* Muster — Tailwind v4 + hand-rolled component classes on shared tokens.
    Two appearances (dark default, light twin) resolved by dataset.theme on
    <html>; every color below is a semantic token so both stay honest. */
 @import "tailwindcss";

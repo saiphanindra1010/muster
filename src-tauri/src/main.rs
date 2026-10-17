@@ -1,7 +1,7 @@
-//! openchat_bot desktop shell: owns the headless OpenCode harness.
+//! Muster desktop shell: owns the headless OpenCode harness.
 //!
 //! On startup it spawns the bundled `opencode` sidecar with every stateful
-//! path redirected into `<appData>/openchat/data` (share/config/state +
+//! path redirected into `<appData>/muster/data` (share/config/state +
 //! workspace), captures the per-boot `server password` from its stdout, and
 //! hands it (plus the harness URL and workspace path) to the web UI through
 //! the `harness_info` / `harness_token` commands. The child is killed when the
@@ -48,13 +48,13 @@ fn pick_port() -> u16 {
         .unwrap_or(4096)
 }
 
-/// `<appData>/openchat/data` + the four child dirs, all created.
+/// `<appData>/muster/data` + the four child dirs, all created.
 fn data_dirs(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf), String> {
     let root = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("app_data_dir: {e}"))?
-        .join("openchat")
+        .join("muster")
         .join("data");
     let share = root.join("share");
     let config = root.join("config");
@@ -187,7 +187,7 @@ fn main() {
             });
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = run_harness(&handle).await {
-                    eprintln!("[openchat] harness failed: {e}");
+                    eprintln!("[muster] harness failed: {e}");
                     if let Some(state) = handle.try_state::<Harness>() {
                         state.exited.store(true, Ordering::SeqCst);
                         *state.error.lock().unwrap() = Some(e);
@@ -202,7 +202,7 @@ fn main() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("failed to build openchat_bot");
+        .expect("failed to build Muster");
 
     app.run(|handle, event| {
         if matches!(event, RunEvent::Exit) {
@@ -246,7 +246,7 @@ async fn run_harness(app: &AppHandle) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("spawn: {e}"))?;
 
-    eprintln!("[openchat] harness pid {:?} on port {port}", child.pid());
+    eprintln!("[muster] harness pid {:?} on port {port}", child.pid());
     app.state::<Harness>().child.lock().unwrap().replace(child);
 
     while let Some(evt) = rx.recv().await {
@@ -255,20 +255,20 @@ async fn run_harness(app: &AppHandle) -> Result<(), String> {
             CommandEvent::Stdout(bytes) => {
                 let line = String::from_utf8_lossy(&bytes);
                 if let Some(pw) = line.trim().strip_prefix(PASSWORD_PREFIX) {
-                    eprintln!("[openchat] harness ready on port {port}");
+                    eprintln!("[muster] harness ready on port {port}");
                     app.state::<Harness>()
                         .password
                         .lock()
                         .unwrap()
                         .replace(pw.trim().to_string());
                 } else if !line.trim().is_empty() {
-                    eprintln!("[openchat:harness] {}", line.trim_end());
+                    eprintln!("[muster:harness] {}", line.trim_end());
                 }
             }
             CommandEvent::Stderr(bytes) => {
                 let line = String::from_utf8_lossy(&bytes);
                 if !line.trim().is_empty() {
-                    eprintln!("[openchat:harness] {}", line.trim_end());
+                    eprintln!("[muster:harness] {}", line.trim_end());
                 }
             }
             CommandEvent::Terminated(payload) => {

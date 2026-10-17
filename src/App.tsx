@@ -1289,7 +1289,7 @@ export function App() {
       <aside className="side">
         <div className="brand">
           <span className="brand-mark"><IconBot size={17} /></span>
-          <b>openchat</b>
+          <b>Muster</b>
           <span className="status"><span className={`pulse ${harnessOk ? "" : "down"}`} />{harnessOk ? "online" : "offline"}</span>
         </div>
         <button className="newbot-btn" onClick={() => setModal({ text: "", err: "" })}>

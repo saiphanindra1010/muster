@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "openchat_bot",
+  "productName": "Muster",
   "version": "0.1.0",
-  "identifier": "com.openchat.bot",
+  "identifier": "com.muster.app",
   "build": {
     "frontendDist": "../src/dist",
     "devUrl": "http://localhost:1420",
@@ -10,7 +10,7 @@
     "beforeBuildCommand": "bun run build:web"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "openchat_bot", "width": 1200, "height": 800 }],
+    "windows": [{ "label": "main", "title": "Muster", "width": 1200, "height": 800 }],
     "security": {
       "csp": "default-src 'self' ipc: http://ipc.localhost; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
     }

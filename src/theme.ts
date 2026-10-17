@@ -8,7 +8,7 @@
 
 export type Appearance = "system" | "light" | "dark";
 
-const KEY = "openchat:appearance";
+const KEY = "muster:appearance";
 
 export function loadAppearance(): Appearance {
   try {

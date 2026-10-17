@@ -1,5 +1,5 @@
 {
-  "name": "openchat_bot",
+  "name": "muster",
   "private": true,
   "type": "module",
   "workspaces": ["server", "src"],

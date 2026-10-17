@@ -59,7 +59,7 @@
           "environment": {
             "AGENT_BROWSER_HEADED": "1",
             "AGENT_BROWSER_NO_WEBMCP": "1",
-            "AGENT_BROWSER_PROFILE": "~/.openchat-bots/browser-profile"
+            "AGENT_BROWSER_PROFILE": "~/.muster-bots/browser-profile"
           },
           "cwd": "."
         }

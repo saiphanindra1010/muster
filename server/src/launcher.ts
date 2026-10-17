@@ -1,7 +1,7 @@
 /**
  * Launcher — the ONLY process that knows about the datafolder.
  *
- * Resolves OPENCHAT_DATA_DIR (default: the desktop app's data folder, so
+ * Resolves MUSTER_DATA_DIR (default: the desktop app's data folder, so
  * browser mode and desktop share bots + chat history), exports
  * XDG_* + OPENCODE_DB so `opencode serve` (the harness) stores EVERYTHING
  * inside it, then spawns the server. The web UI / Tauri shell never touch
@@ -17,8 +17,8 @@
  * so the UI streams via fetch).
  *
  * Env in (see ../../.env.example):
- *   OPENCHAT_DATA_DIR  default <XDG_DATA_HOME>/com.openchat.bot/openchat/data
- *   OPENCHAT_PORT/HOST default 127.0.0.1:4096
+ *   MUSTER_DATA_DIR  default <XDG_DATA_HOME>/com.muster.app/muster/data
+ *   MUSTER_PORT/HOST default 127.0.0.1:4096
  *   OPENCODE_DISABLE_PRUNE forwarded (default 1 = keep history)
  *
  * Docs: https://opencode.ai/v2/docs/troubleshooting#service-files (DB path,
@@ -32,21 +32,21 @@ import { resolve, join, dirname } from "node:path";
 const ROOT = resolve(import.meta.dir, "..", "..");
 // Canonical data location: the same folder the desktop app uses, so browser
 // mode and the desktop app share bots + chat history by default. Set
-// OPENCHAT_DATA_DIR for an isolated sandbox (e.g. ./data next to the repo).
+// MUSTER_DATA_DIR for an isolated sandbox (e.g. ./data next to the repo).
 const APP_DATA = join(
   process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"),
-  "com.openchat.bot",
-  "openchat",
+  "com.muster.app",
+  "muster",
   "data",
 );
-const DATA = resolve(process.env.OPENCHAT_DATA_DIR ?? APP_DATA);
+const DATA = resolve(process.env.MUSTER_DATA_DIR ?? APP_DATA);
 const SHARE = join(DATA, "share");
 const CONFIG = join(DATA, "config");
 const STATE = join(DATA, "state");
 const WORKSPACE = join(DATA, "workspace");
 
-const HOST = process.env.OPENCHAT_HOST ?? "127.0.0.1";
-const PORT = process.env.OPENCHAT_PORT ?? "4096";
+const HOST = process.env.MUSTER_HOST ?? "127.0.0.1";
+const PORT = process.env.MUSTER_PORT ?? "4096";
 const TOKEN_FILE = join(STATE, `harness-token-${PORT}`);
 
 for (const d of [DATA, SHARE, CONFIG, STATE, WORKSPACE, join(SHARE, "opencode")]) {
@@ -72,7 +72,7 @@ function seedTemplates() {
       if (existsSync(dst)) continue;
       mkdirSync(dirname(dst), { recursive: true });
       copyFileSync(src, dst);
-      console.log(`[openchat] seeded ${rel}`);
+      console.log(`[muster] seeded ${rel}`);
     }
   };
   walk(root);
@@ -88,13 +88,13 @@ process.env.OPENCODE_DISABLE_PRUNE ??= "1";
 
 // UI origin for CORS (vite dev + tauri webview). Add prod origins here.
 const CORS =
-  process.env.OPENCHAT_CORS ??
+  process.env.MUSTER_CORS ??
   "http://127.0.0.1:1420,http://localhost:1420,tauri://localhost,http://tauri.localhost,https://tauri.localhost";
 
-console.log(`[openchat] data      : ${DATA}`);
-console.log(`[openchat] db        : ${process.env.OPENCODE_DB}`);
-console.log(`[openchat] workspace : ${WORKSPACE}`);
-console.log(`[openchat] harness   : http://${HOST}:${PORT}`);
+console.log(`[muster] data      : ${DATA}`);
+console.log(`[muster] db        : ${process.env.OPENCODE_DB}`);
+console.log(`[muster] workspace : ${WORKSPACE}`);
+console.log(`[muster] harness   : http://${HOST}:${PORT}`);
 
 // Fail fast with a clear message when the port is already taken
 // (e.g. a previous launcher is still running).
@@ -102,7 +102,7 @@ try {
   const probe = Bun.listen({ hostname: HOST, port: Number(PORT), socket: { data() {} } });
   probe.stop();
 } catch {
-  console.error(`[openchat] port ${PORT} is already in use — another harness/launcher is running. Stop it first (or set OPENCHAT_PORT).`);
+  console.error(`[muster] port ${PORT} is already in use — another harness/launcher is running. Stop it first (or set MUSTER_PORT).`);
   process.exit(1);
 }
 
@@ -136,7 +136,7 @@ const passwordCaptured = (async () => {
       password = m[1];
       writeFileSync(TOKEN_FILE, password + "\n", { mode: 0o600 });
       try { chmodSync(TOKEN_FILE, 0o600); } catch {}
-      console.log(`[openchat] token saved : ${TOKEN_FILE}`);
+      console.log(`[muster] token saved : ${TOKEN_FILE}`);
       reader.cancel().catch(() => {});
       return password;
     }
@@ -156,14 +156,14 @@ for (let i = 0; i < 60; i++) {
     });
     if (r.ok) {
       ready = true;
-      console.log(`[openchat] ready — UI targets ${base} with token from ${TOKEN_FILE}`);
-      console.log(`[openchat] dev hint: VITE_OPENCODE_TOKEN=$(cat ${TOKEN_FILE}) VITE_WORKSPACE_DIR=${WORKSPACE} bun run dev:web`);
+      console.log(`[muster] ready — UI targets ${base} with token from ${TOKEN_FILE}`);
+      console.log(`[muster] dev hint: VITE_OPENCODE_TOKEN=$(cat ${TOKEN_FILE}) VITE_WORKSPACE_DIR=${WORKSPACE} bun run dev:web`);
       break;
     }
   } catch {}
   await Bun.sleep(1000);
 }
-if (!ready) console.error(`[openchat] harness did not answer ${base}/api/info within 60s — check serve output above.`);
+if (!ready) console.error(`[muster] harness did not answer ${base}/api/info within 60s — check serve output above.`);
 
 const onSignal = () => proc.kill();
 process.on("SIGINT", onSignal);
