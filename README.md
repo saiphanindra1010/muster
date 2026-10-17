@@ -47,7 +47,7 @@ Deeper documentation lives in [`docs/`](docs/README.md):
 ## 2. Run (browser, one command)
 
 ```sh
-cd /media/phani/DriveE/muster
+cd path/to/muster
 ./run.sh
 # -> headless harness + web UI over the desktop app's data folder,
 #    opens http://127.0.0.1:1420. Ctrl+C stops everything.
@@ -74,7 +74,7 @@ System deps are installed on this machine (libwebkit2gtk-4.1-dev, libgtk-3-dev,
 libayatana-appindicator3-dev, librsvg2-dev, libssl-dev, ...). Build and run:
 
 ```sh
-cd /media/phani/DriveE/muster
+cd path/to/muster
 bun run tauri:dev    # desktop window, hot-reload UI, harness auto-started
 bun run tauri:build  # .deb in src-tauri/target/release/bundle/deb/
 ```
