@@ -26,6 +26,26 @@
       }
     },
     {
+      "id": "chrome-devtools",
+      "kind": "mcp",
+      "name": "Chrome DevTools (browser)",
+      "description": "Google's Chrome automation for bots: reliable click/type/navigate with built-in waits, plus console, network and performance inspection. No sign-in needed.",
+      "tags": ["browser", "automation", "debugging"],
+      "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": [
+            "npx", "-y", "chrome-devtools-mcp@latest",
+            "--no-usage-statistics",
+            "--no-performance-crux",
+            "--no-page-id-routing"
+          ],
+          "cwd": "."
+        }
+      }
+    },
+    {
       "id": "filesystem",
       "kind": "mcp",
       "name": "Filesystem (workspace)",
