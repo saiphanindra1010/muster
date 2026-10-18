@@ -80,6 +80,24 @@ export const IconBook = w(BookOpen);
 export const IconWrench = w(Wrench);
 export const IconExternal = w(ExternalLink);
 
+/* ---------------------------- product mark ---------------------------- */
+
+/** Muster mark: the four pastel "crew" dots, drawn at the app icon's proportions. */
+export const IconMark = ({ size = 28, className }: P) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 512 512"
+    className={className}
+    aria-hidden="true"
+  >
+    <circle cx="174" cy="174" r="62" fill="#b6e3f4" />
+    <circle cx="338" cy="174" r="62" fill="#c0aede" />
+    <circle cx="174" cy="338" r="62" fill="#ffdfbf" />
+    <circle cx="338" cy="338" r="62" fill="#ffd5dc" />
+  </svg>
+);
+
 /* ---------------------------- connector brand logos ---------------------------- */
 
 const logo =

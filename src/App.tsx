@@ -6,8 +6,8 @@ import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } fr
 import { chatHasStaleSkillMarker, createBotFromPrompt, listBots, listDisabledBots, listMcp, mcpStatusLabel, upgradeBotPersonas } from "./lib/bots";
 import { useEscape } from "./lib/useEscape";
 import {
-  IconActivity, IconArrowUp, IconBot, IconCheck, IconChevronDown, IconCopy,
-  IconGear, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
+  IconActivity, IconArrowUp, IconCheck, IconChevronDown, IconCopy,
+  IconGear, IconMark, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
 } from "./icons";
 import { BotAvatar } from "./avatar";
 import { BotSettings } from "./Bots";
@@ -1341,7 +1341,7 @@ export function App() {
     <div className="layout">
       <aside className="side">
         <div className="brand">
-          <span className="brand-mark"><IconBot size={17} /></span>
+          <span className="brand-mark"><IconMark size={28} /></span>
           <b>Muster</b>
           <span className="status"><span className={`pulse ${harnessOk ? "" : "down"}`} />{harnessOk ? "online" : "offline"}</span>
         </div>
@@ -1458,7 +1458,7 @@ export function App() {
         {!activeBot ? (
           <div className="hero">
             <div className="hero-inner">
-              <span className="brand-mark" style={{ width: 52, height: 52, borderRadius: 16 }}><IconBot size={28} /></span>
+              <span className="brand-mark" style={{ width: 52, height: 52 }}><IconMark size={52} /></span>
               <h1>Talk to your bots</h1>
               <div className="lede">
                 {bots.length === 0
