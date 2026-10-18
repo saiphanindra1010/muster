@@ -131,6 +131,9 @@ const passwordCaptured = (async () => {
     const chunk = decoder.decode(value ?? new Uint8Array(), { stream: !done });
     process.stdout.write(chunk); // keep serve logs visible
     buf += chunk;
+    // Bounded scan window - a long log burst before the password line must
+    // not grow the buffer without limit (the password line is tiny).
+    if (buf.length > 8192) buf = buf.slice(-4096);
     const m = buf.match(/server password (\S+)/);
     if (m) {
       password = m[1];

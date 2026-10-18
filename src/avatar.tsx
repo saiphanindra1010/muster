@@ -13,6 +13,8 @@ import { bottts } from "@dicebear/collection";
  */
 const PASTELS = ["b6e3f4", "c0aede", "d1d4f9", "ffd5dc", "ffdfbf"];
 const cache = new Map<string, string>();
+/** Cap on cached avatars - any sane roster fits, so churn can't pin them. */
+const CACHE_MAX = 500;
 
 function avatarUri(seed: string, color?: string): string {
   // A bot's explicit frontmatter color overrides the pastel palette.
@@ -24,6 +26,7 @@ function avatarUri(seed: string, color?: string): string {
       seed: seed || "?",
       backgroundColor: custom ? [custom] : PASTELS,
     }).toDataUri();
+    if (cache.size > CACHE_MAX) cache.clear();
     cache.set(key, uri);
   }
   return uri;

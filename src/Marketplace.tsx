@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   catalog,
   customPluginItem,
@@ -27,6 +27,9 @@ import { connectMcpServer } from "./lib/bots";
 import { useEscape } from "./lib/useEscape";
 
 const KIND_LABEL: Record<MarketKind, string> = { mcp: "Connector", plugin: "Plugin", skill: "Skill" };
+
+/** Stop the install poll after this many tries (~10 min at 4s per tick). */
+const INSTALL_POLL_MAX = 150;
 
 function KindIcon({ kind, size = 15 }: { kind: MarketKind; size?: number }) {
   if (kind === "mcp") return <IconWrench size={size} />;
@@ -86,10 +89,25 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
     if (!cfg || !state) return false;
     return cfg.plugins.some((p) => (state.plugins.get(p)?.status ?? "installing") !== "active");
   }, [cfg, state]);
+  /** One refresh at a time - a slow call must not stack with the next tick. */
+  const refreshing = useRef(false);
   useEffect(() => {
     if (!installing) return;
+    let attempts = 0;
     const t = window.setInterval(() => {
-      refresh().catch(() => {});
+      // Give up after ~10 minutes - a plugin that never turns active must
+      // not keep this modal polling forever.
+      if (++attempts > INSTALL_POLL_MAX) {
+        window.clearInterval(t);
+        return;
+      }
+      if (refreshing.current) return;
+      refreshing.current = true;
+      refresh()
+        .catch(() => {})
+        .finally(() => {
+          refreshing.current = false;
+        });
     }, 4000);
     return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

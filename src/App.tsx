@@ -155,21 +155,31 @@ DOMPurify.addHook("afterSanitizeElements", (node) => {
   wrap.appendChild(el);
 });
 
-/** Parse cache - streaming re-renders the same text on every delta. */
+/** Parse cache - finalized messages re-render on theme flips, roster updates, … */
 const mdCache = new Map<string, string>();
+/** Cap on cached entries - keeps the cache from pinning many long messages. */
+const MD_CACHE_MAX = 300;
+/** Strings above this size render uncached (one long answer shouldn't hog it). */
+const MD_CACHE_MAX_CHARS = 200_000;
 
-/** Markdown → sanitized HTML (full GFM: tables, lists, links, quotes, code). */
-export function renderMarkdown(src: string): string {
-  const hit = mdCache.get(src);
-  if (hit !== undefined) return hit;
+/** Markdown → sanitized HTML (full GFM: tables, lists, links, quotes, code).
+ *  Pass `cache: false` for streamed/partial text: every delta is a new string,
+ *  so caching each one pins up to ~300 progressively-growing copies. */
+export function renderMarkdown(src: string, cache = true): string {
+  if (cache) {
+    const hit = mdCache.get(src);
+    if (hit !== undefined) return hit;
+  }
   let html: string;
   try {
     html = DOMPurify.sanitize(marked.parse(src, { async: false }) as string);
   } catch {
     html = src.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>");
   }
-  if (mdCache.size > 300) mdCache.clear();
-  mdCache.set(src, html);
+  if (cache && src.length <= MD_CACHE_MAX_CHARS) {
+    if (mdCache.size > MD_CACHE_MAX) mdCache.clear();
+    mdCache.set(src, html);
+  }
   return html;
 }
 
@@ -295,6 +305,7 @@ export function App() {
     clearWatchdog(sid);
     watchdogs.current[sid] = setTimeout(() => {
       delete watchdogs.current[sid];
+      delete turns.current[sid];
       setSessionBusy(sid, false);
       if (sid === activeIDRef.current) {
         say("This turn went quiet. Reloading the thread to catch up.");
@@ -521,6 +532,16 @@ export function App() {
         if (kept.length) n[id] = kept;
         else delete n[id];
         return n;
+      });
+      // Cluster keys describe tool rows in the rebuilt thread - drop the ones
+      // whose row is gone so the set can't grow across reloads.
+      const clusterKeys = new Set(out.filter((m) => m.role === "tool").map((m) => `tg-${m.key}`));
+      for (const x of liveRef.current[id] ?? []) if (x.kind === "tool") clusterKeys.add(`tg-${x.key}`);
+      setOpenClusters((s) => {
+        if (!s.size) return s;
+        const n = new Set<string>();
+        for (const k of s) if (clusterKeys.has(k)) n.add(k);
+        return n.size === s.size ? s : n;
       });
     } catch {}
   };
@@ -795,12 +816,14 @@ export function App() {
           clearWatchdog(sid);
           delete turns.current[sid];
           setSessionBusy(sid, false);
+          // The feed belongs to the finished turn - drop it for chats that
+          // settled off-screen too, so live strokes can't linger forever.
+          const feed = liveRef.current[sid] ?? [];
+          dropFeed(sid);
           if (isActive()) {
             // Settle: fold the live feed into the thread first so nothing
             // blinks out while the harness finishes persisting, then reload
             // (the stored thread is authoritative from here).
-            const feed = liveRef.current[sid] ?? [];
-            dropFeed(sid);
             if (feed.length) {
               setMsgs((prev) => {
                 const seenText = new Set(prev.filter((m) => m.role === "assistant").map((m) => m.text.trim()));
@@ -928,9 +951,39 @@ export function App() {
           if (sid) loadPerms(sid);
           break;
         case "session.created":
-        case "session.deleted":
           refreshSessions();
           break;
+        case "session.deleted": {
+          // The chat is gone - prune everything keyed by it so deleted
+          // sessions don't leave state behind for the app's lifetime.
+          if (sid) {
+            clearWatchdog(sid);
+            delete turns.current[sid];
+            setSessionBusy(sid, false);
+            syncNeedsYou(sid, false);
+            markSeen(sid);
+            setModelsBySession((prev) => {
+              if (!(sid in prev)) return prev;
+              const n = { ...prev };
+              delete n[sid];
+              return n;
+            });
+            replacePending((prev) => {
+              if (!(sid in prev)) return prev;
+              const n = { ...prev };
+              delete n[sid];
+              return n;
+            });
+            replaceLive((prev) => {
+              if (!(sid in prev)) return prev;
+              const n = { ...prev };
+              delete n[sid];
+              return n;
+            });
+          }
+          refreshSessions();
+          break;
+        }
         default:
           if (CATALOG_EVENTS.has(e.type)) refreshCatalogs();
       }
@@ -1219,7 +1272,7 @@ export function App() {
               <span className="time">{streamed ? "now" : fmtTime(m.time)}</span>
             </div>
           )}
-          <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+          <div className="slack-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text, !streamed) }} />
           {!streamed && (
             <div className="msg-actions">
               <button onClick={() => copy(m.text, m.key)} title="Copy">{votes[`c:${m.key}`] ? <IconCheck size={14} /> : <IconCopy size={14} />}</button>
