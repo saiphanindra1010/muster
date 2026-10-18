@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   catalog,
   customPluginItem,
@@ -12,6 +12,7 @@ import {
   type MarketState,
 } from "./lib/marketplace";
 import {
+  CONNECTOR_ICONS,
   IconBook,
   IconExternal,
   IconPackage,
@@ -22,6 +23,7 @@ import {
   IconWrench,
   IconX,
 } from "./icons";
+import { connectMcpServer } from "./lib/bots";
 import { useEscape } from "./lib/useEscape";
 
 const KIND_LABEL: Record<MarketKind, string> = { mcp: "Connector", plugin: "Plugin", skill: "Skill" };
@@ -50,7 +52,7 @@ function McpChip({ st }: { st?: { status: string; error?: string } }) {
 }
 
 /**
- * Marketplace modal — connectors (MCP), plugins and skills in one store.
+ * Marketplace modal: connectors (MCP), plugins and skills in one store.
  * Everything installs the same way: a workspace file/config edit plus a
  * location reload, so entries persist and survive restarts.
  */
@@ -63,7 +65,7 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
-  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const [fieldVals, setFieldVals] = useState<Record<string, Record<string, string>>>({});
   const [custom, setCustom] = useState("");
 
   useEscape(onClose);
@@ -146,12 +148,14 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
     const pkg = item.plugin?.package;
     const pluginSt = pkg ? state?.plugins.get(pkg) : undefined;
     const isBusy = busy === item.id;
-    const tok = item.mcp?.token;
+    const fields = item.mcp?.fields ?? [];
+    const Ico = item.icon ? CONNECTOR_ICONS[item.icon] : undefined;
+    const missing = fields.some((_, i) => !(fieldVals[item.id]?.[String(i)] ?? "").trim());
     return (
       <div className="mkt-card">
         <div className="mkt-head">
           <span className={`mkt-ic ${item.kind}`}>
-            <KindIcon kind={item.kind} />
+            {Ico ? <Ico size={15} /> : <KindIcon kind={item.kind} />}
           </span>
           <span className="mkt-title">
             <strong>{item.name}</strong>
@@ -181,6 +185,15 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
                   </span>
                 )}
                 {item.kind === "skill" && <span className="mkt-chip ok">Installed</span>}
+                {item.mcp?.signin && (mcpSt?.status === "needs_auth" || mcpSt?.status === "needs_auth_manual") && (
+                  <button
+                    className="mkt-btn primary"
+                    onClick={() => run(item.id, () => connectMcpServer(item.id))}
+                    disabled={!!busy}
+                  >
+                    {isBusy ? <IconRefresh size={13} className="spin" /> : null} Sign in
+                  </button>
+                )}
                 <button
                   className="mkt-btn"
                   onClick={() => {
@@ -200,9 +213,9 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
             ) : (
               <button
                 className="mkt-btn primary"
-                onClick={() => run(item.id, () => installItem(item, tokens[item.id]))}
-                disabled={!!busy || (!!tok && !tokens[item.id]?.trim())}
-                title={tok ? `${tok.label} required` : undefined}
+                onClick={() => run(item.id, () => installItem(item, fieldVals[item.id]))}
+                disabled={!!busy || missing}
+                title={missing ? `${fields[0]?.label ?? "Field"} required` : undefined}
               >
                 {isBusy ? <IconRefresh size={13} className="spin" /> : <IconPlus size={13} />} Install
               </button>
@@ -210,23 +223,27 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
           </span>
         </div>
         <p className="mkt-desc">{item.description}</p>
-        {tok && !inst && (
-          <label className="mkt-token">
-            <span>{tok.label}</span>
-            <input
-              type="password"
-              value={tokens[item.id] ?? ""}
-              placeholder={tok.placeholder ?? ""}
-              onChange={(e) => setTokens({ ...tokens, [item.id]: e.target.value })}
-            />
-          </label>
-        )}
-        {tok && !inst && tok.help && <div className="mkt-note">{tok.help}</div>}
-        {item.mcp?.signin && inst && mcpSt?.status === "needs_auth" && (
-          <div className="mkt-note">
-            This tool needs a one-time sign-in. Open <b>Tools</b> in the sidebar and choose <b>Connect</b> to continue.
-          </div>
-        )}
+        {!inst &&
+          fields.map((f, i) => (
+            <Fragment key={f.label}>
+              <label className="mkt-token">
+                <span>{f.label}</span>
+                <input
+                  type="password"
+                  value={fieldVals[item.id]?.[String(i)] ?? ""}
+                  placeholder={f.placeholder ?? ""}
+                  onChange={(e) =>
+                    setFieldVals({
+                      ...fieldVals,
+                      [item.id]: { ...fieldVals[item.id], [String(i)]: e.target.value },
+                    })
+                  }
+                />
+              </label>
+              {f.help && <div className="mkt-note">{f.help}</div>}
+            </Fragment>
+          ))}
+        {!inst && item.mcp?.note && <div className="mkt-note">{item.mcp.note}</div>}
         {(item.requires?.length ?? 0) > 0 && !inst && <div className="mkt-note">Requires {item.requires!.join(", ")}</div>}
         {(item.tags?.length ?? 0) > 0 && (
           <div className="mkt-foot">
@@ -254,7 +271,7 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
           </button>
         </div>
         <p className="mkt-sub">
-          Connectors, plugins and skills for your bots. One click to install — everything is stored in your workspace.
+          Connectors, plugins and skills for your bots. One click to install. Everything is stored in your workspace.
         </p>
         <div className="mkt-bar">
           <span className="mkt-search">

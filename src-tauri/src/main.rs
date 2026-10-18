@@ -33,7 +33,7 @@ const CORS_ORIGINS: [&str; 5] = [
 struct Harness {
     password: Mutex<Option<String>>,
     child: Mutex<Option<CommandChild>>,
-    /// Loopback port picked at startup — never a fixed one, so a dev harness
+    /// Loopback port picked at startup - never a fixed one, so a dev harness
     /// on 4096 cannot be clobbered.
     port: u16,
     workspace: PathBuf,
@@ -106,7 +106,7 @@ fn templates_root(app: &AppHandle) -> PathBuf {
     }
 }
 
-/// Recursively copy files that do not exist in `dst` yet. Never overwrites —
+/// Recursively copy files that do not exist in `dst` yet. Never overwrites -
 /// the workspace belongs to the user once seeded.
 fn copy_missing_tree(src: &Path, dst: &Path) {
     if !src.is_dir() {

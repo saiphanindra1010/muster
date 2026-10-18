@@ -1,5 +1,5 @@
 /**
- * Appearance (light / dark / system) — one setting for the whole app.
+ * Appearance (light / dark / system) - one setting for the whole app.
  *
  * The decision lands on <html data-theme="dark|light">; every token in
  * styles.css has a light twin. index.html runs the same resolution before

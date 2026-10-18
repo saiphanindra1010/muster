@@ -5,6 +5,7 @@
       "id": "context7",
       "kind": "mcp",
       "name": "Context7 Docs",
+      "icon": "docs",
       "description": "Up-to-date library documentation and code examples for thousands of packages. No sign-in needed.",
       "tags": ["docs", "code"],
       "homepage": "https://context7.com",
@@ -14,6 +15,7 @@
       "id": "playwright",
       "kind": "mcp",
       "name": "Playwright (browser)",
+      "icon": "playwright",
       "description": "Drive a real browser: navigate, click, type, screenshot and scrape web pages. Install only one browser connector at a time.",
       "tags": ["browser", "automation"],
       "homepage": "https://github.com/microsoft/playwright-mcp",
@@ -29,6 +31,7 @@
       "id": "chrome-devtools",
       "kind": "mcp",
       "name": "Chrome DevTools (browser)",
+      "icon": "chrome",
       "description": "Google's Chrome automation for bots: reliable click/type/navigate with built-in waits, plus console, network and performance inspection. No sign-in needed. Install only one browser connector at a time.",
       "tags": ["browser", "automation", "debugging"],
       "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
@@ -49,6 +52,7 @@
       "id": "agent-browser",
       "kind": "mcp",
       "name": "Agent Browser (browser)",
+      "icon": "browser",
       "description": "Vercel's agent-first browser as a connector: real headed Chrome, accessibility snapshots with clickable refs, wait-on-condition helpers, a fast read-only mode for pages, and a persistent profile so logins survive restarts. Pinned to a verified version. Install only one browser connector at a time.",
       "tags": ["browser", "automation"],
       "homepage": "https://github.com/vercel-labs/agent-browser",
@@ -69,6 +73,7 @@
       "id": "filesystem",
       "kind": "mcp",
       "name": "Filesystem (workspace)",
+      "icon": "files",
       "description": "Read and write files in the workspace through tools instead of shell commands.",
       "tags": ["files"],
       "homepage": "https://github.com/modelcontextprotocol/servers",
@@ -84,6 +89,7 @@
       "id": "memory",
       "kind": "mcp",
       "name": "Memory (knowledge graph)",
+      "icon": "memory",
       "description": "A persistent knowledge graph the bot can save to and recall across chats.",
       "tags": ["memory"],
       "homepage": "https://github.com/modelcontextprotocol/servers",
@@ -99,6 +105,7 @@
       "id": "sequential-thinking",
       "kind": "mcp",
       "name": "Sequential Thinking",
+      "icon": "thinking",
       "description": "Structured step-by-step reasoning for multi-step problems.",
       "tags": ["reasoning"],
       "homepage": "https://github.com/modelcontextprotocol/servers",
@@ -114,7 +121,8 @@
       "id": "everything",
       "kind": "mcp",
       "name": "Everything (reference)",
-      "description": "The reference MCP server — demo tools, prompts and resources. Handy for testing.",
+      "icon": "mcp",
+      "description": "The reference MCP server: demo tools, prompts and resources. Handy for testing.",
       "tags": ["testing"],
       "homepage": "https://github.com/modelcontextprotocol/servers",
       "mcp": {
@@ -129,25 +137,133 @@
       "id": "github",
       "kind": "mcp",
       "name": "GitHub",
+      "icon": "github",
       "description": "Repos, issues, pull requests and code search through GitHub's hosted MCP server.",
       "tags": ["code", "git"],
       "requires": ["GitHub token"],
       "homepage": "https://github.com/github/github-mcp-server",
       "mcp": {
         "config": { "type": "remote", "url": "https://api.githubcopilot.com/mcp/", "oauth": false },
-        "token": {
-          "header": "Authorization",
-          "prefix": "Bearer ",
-          "label": "GitHub personal access token",
-          "placeholder": "ghp_… or github_pat_…",
-          "help": "Stored in your workspace opencode.jsonc. Needs repo scope (classic) or equivalent fine-grained access."
+        "fields": [
+          {
+            "header": "Authorization",
+            "prefix": "Bearer ",
+            "label": "GitHub personal access token",
+            "placeholder": "ghp_... or github_pat_...",
+            "help": "Stored in your workspace opencode.jsonc. Needs repo scope (classic) or equivalent fine-grained access."
+          }
+        ]
+      }
+    },
+    {
+      "id": "slack",
+      "kind": "mcp",
+      "name": "Slack",
+      "icon": "slack",
+      "description": "Search messages and files, read channels and reply as you through Slack's official connector. A workspace admin may need to approve it first.",
+      "tags": ["chat", "communication"],
+      "requires": ["Slack sign-in"],
+      "homepage": "https://mcp.slack.com",
+      "mcp": {
+        "config": { "type": "remote", "url": "https://mcp.slack.com/mcp" },
+        "signin": true
+      }
+    },
+    {
+      "id": "gmail",
+      "kind": "mcp",
+      "name": "Gmail",
+      "icon": "gmail",
+      "description": "Search, read, label and draft mail through Google's official Gmail connector (developer preview). Read and draft only: the server has no send tool.",
+      "tags": ["email", "google"],
+      "requires": ["One-time Google Cloud setup"],
+      "homepage": "https://developers.google.com/workspace/guides/configure-mcp-servers",
+      "mcp": {
+        "config": {
+          "type": "remote",
+          "url": "https://gmailmcp.googleapis.com/mcp/v1",
+          "oauth": {
+            "client_id": "{env:GOOGLE_MCP_CLIENT_ID}",
+            "client_secret": "{env:GOOGLE_MCP_CLIENT_SECRET}",
+            "callback_port": 19876,
+            "redirect_uri": "http://127.0.0.1:19876/callback"
+          }
+        },
+        "signin": true,
+        "note": "Needs a one-time Google Cloud OAuth client: add its ID and secret to .env, then choose Sign in. The README walks through the 5-minute setup."
+      }
+    },
+    {
+      "id": "google-chat",
+      "kind": "mcp",
+      "name": "Google Chat",
+      "icon": "google-chat",
+      "description": "Search and read your spaces and send messages through Google's official Chat connector (developer preview).",
+      "tags": ["chat", "google"],
+      "requires": ["One-time Google Cloud setup"],
+      "homepage": "https://developers.google.com/workspace/guides/configure-mcp-servers",
+      "mcp": {
+        "config": {
+          "type": "remote",
+          "url": "https://chatmcp.googleapis.com/mcp/v1",
+          "oauth": {
+            "client_id": "{env:GOOGLE_MCP_CLIENT_ID}",
+            "client_secret": "{env:GOOGLE_MCP_CLIENT_SECRET}",
+            "callback_port": 19877,
+            "redirect_uri": "http://127.0.0.1:19877/callback"
+          }
+        },
+        "signin": true,
+        "note": "Uses the same one-time Google Cloud OAuth client as Gmail, with http://127.0.0.1:19877/callback added as a redirect URI. The README walks through it."
+      }
+    },
+    {
+      "id": "teams",
+      "kind": "mcp",
+      "name": "Microsoft Teams",
+      "icon": "teams",
+      "description": "Read teams, channels and chats, send messages, share files and search across Microsoft Teams through the Graph API.",
+      "tags": ["chat", "microsoft"],
+      "requires": ["One-time Microsoft sign-in"],
+      "homepage": "https://github.com/floriscornel/teams-mcp",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "@floriscornel/teams-mcp@latest"],
+          "cwd": "."
         }
+      }
+    },
+    {
+      "id": "discord",
+      "kind": "mcp",
+      "name": "Discord",
+      "icon": "discord",
+      "description": "Read channels, send and manage messages, threads, forums, reactions and webhooks in your Discord server.",
+      "tags": ["chat", "community"],
+      "requires": ["Discord bot token"],
+      "homepage": "https://github.com/barryyip0625/mcp-discord",
+      "mcp": {
+        "config": {
+          "type": "local",
+          "command": ["npx", "-y", "mcp-discord@latest"],
+          "cwd": "."
+        },
+        "fields": [
+          {
+            "env": "DISCORD_TOKEN",
+            "label": "Discord bot token",
+            "placeholder": "Bot token from the Discord Developer Portal",
+            "help": "Create a bot at discord.com/developers/applications, enable the Message Content intent, then invite it to your server. Stored in your workspace opencode.jsonc."
+          }
+        ]
       }
     },
     {
       "id": "sentry",
       "kind": "mcp",
       "name": "Sentry",
+      "icon": "sentry",
       "description": "Search issues, events and stack traces. Requires a browser sign-in after install.",
       "tags": ["monitoring"],
       "homepage": "https://mcp.sentry.dev",
@@ -168,7 +284,7 @@
     {
       "id": "@tarquinen/opencode-dcp",
       "kind": "plugin",
-      "name": "DCP — context pruning",
+      "name": "DCP: context pruning",
       "description": "Prunes obsolete tool output from the conversation to save context tokens.",
       "tags": ["tokens", "context"],
       "homepage": "https://www.npmjs.com/package/@tarquinen/opencode-dcp",

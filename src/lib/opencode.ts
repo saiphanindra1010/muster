@@ -2,7 +2,7 @@ import { OpenCode } from "@opencode/client";
 
 /**
  * Shared harness client. The UI talks HTTP to a locally running
- * `opencode serve` ("the harness") — see server/src/launcher.ts for the
+ * `opencode serve` ("the harness") - see server/src/launcher.ts for the
  * browser-dev story, src-tauri/ for the desktop app.
  *
  * Auth: the harness guards every route with HTTP Basic, user `opencode`,
@@ -35,7 +35,7 @@ export function authHeaders(): Record<string, string> {
   }
 }
 
-/** Live binding — rebuilt by configureRuntime(); importers always see the new client. */
+/** Live binding - rebuilt by configureRuntime(); importers always see the new client. */
 export let client = OpenCode.make({ baseUrl: base, headers: authHeaders() });
 
 export function configureRuntime(o: { baseUrl?: string; token?: string; workspace?: string }) {
@@ -64,7 +64,7 @@ export async function resolveTauriHarness(): Promise<boolean> {
   return false;
 }
 
-/** Location input for session create — pins sessions inside the datafolder workspace. */
+/** Location input for session create - pins sessions inside the datafolder workspace. */
 export function sessionLocation(): { directory: string } | undefined {
   return workspace ? { directory: workspace } : undefined;
 }

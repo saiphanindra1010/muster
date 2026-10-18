@@ -15,7 +15,7 @@ function statusColor(st: string): string {
  * Tools modal: connected MCP servers / plugins (Gmail-style connectors are
  * remote MCP servers), with connect / disconnect / remove and an add form.
  * Entries are written to the workspace opencode.jsonc so they persist.
- * Servers that need OAuth sign-in show a status — the harness owns that flow.
+ * Servers that need OAuth sign-in show a status - the harness owns that flow.
  */
 export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -74,7 +74,7 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
           <button className="icon-btn" onClick={onClose} title="Close"><IconX size={16} /></button>
         </div>
         <p>Tools your bots can use. Anything that needs a sign-in shows its status here.</p>
-        {servers.length === 0 && <div className="hint">Nothing connected yet — add a tool below.</div>}
+        {servers.length === 0 && <div className="hint">Nothing connected yet. Add a tool below.</div>}
         {servers.map((s) => {
           const st = s.status.status;
           const error = "error" in s.status ? s.status.error : undefined;

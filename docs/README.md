@@ -2,7 +2,7 @@
 
 Muster is a desktop app where each bot is an OpenCode agent on a headless
 `opencode serve` harness. Bots behave like colleagues: their own chat, skills
-and connector access, running in the background — the engine stays invisible.
+and connector access, running in the background - the engine stays invisible.
 
 | Doc | What's inside |
 | --- | --- |

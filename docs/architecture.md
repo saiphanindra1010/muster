@@ -7,7 +7,7 @@ one data folder, one long-lived event stream.
 flowchart TB
   UI["React UI<br/>(Tauri webview or browser tab)"]
   SH["Shell<br/>Tauri main.rs · Bun launcher.ts"]
-  H["opencode serve — the harness"]
+  H["opencode serve - the harness"]
   D[("data folder<br/>SQLite + workspace files")]
 
   SH -- "spawn · XDG_* redirects · per-boot password" --> H
@@ -29,16 +29,16 @@ system touches its storage directly.
 Two interchangeable shells prepare the harness and hand the UI its coordinates
 (URL, password, workspace):
 
-- **Browser mode** — `run.sh` → `server/src/launcher.ts` (`bun run start`).
+- **Browser mode**: `run.sh` → `server/src/launcher.ts` (`bun run start`).
   The launcher resolves the data folder, redirects `XDG_*` + `OPENCODE_DB`
   into it, spawns `opencode serve` as a child, captures the per-boot password,
   writes `state/harness-token-<port>`, seeds `templates/workspace/`
   (copy-if-missing), and waits for `/api/info` to answer before printing the
   dev hint. It fails fast when the port is already taken.
-- **Desktop mode** — `src-tauri/src/main.rs`. Picks a free loopback port,
+- **Desktop mode**: `src-tauri/src/main.rs`. Picks a free loopback port,
   creates `<appData>/muster/data`, seeds templates, and spawns the bundled
   `opencode` sidecar with the same env redirects. The UI fetches URL +
-  password over the Tauri commands `harness_info` / `harness_token` at boot —
+  password over the Tauri commands `harness_info` / `harness_token` at boot -
   no tokens in the build, no env vars. The sidecar is killed on window close
   and app exit; CORS is granted to `tauri://localhost`, `http(s)://tauri.localhost`
   and the Vite dev origins.
@@ -107,12 +107,12 @@ Keep the UI dumb: all agent/tool reasoning stays in the harness.
 
 ## Configuration sources
 
-- **Base config** — `opencode.jsonc` in the harness cwd (repo root in dev;
+- **Base config**: `opencode.jsonc` in the harness cwd (repo root in dev;
   the bundled resource in release builds): default model, providers,
   websearch, base permissions.
-- **Workspace config** — `<workspace>/opencode.jsonc`, written by the app
+- **Workspace config**: `<workspace>/opencode.jsonc`, written by the app
   when you install connectors or plugins; hand-written comments survive.
-- **Environment** — provider and websearch keys via `.env` (Bun auto-loads it
+- **Environment**: provider and websearch keys via `.env` (Bun auto-loads it
   for the launcher), forwarded to the harness.
 
 ## Storage layout
@@ -122,7 +122,7 @@ Everything stateful lives under one root:
 ```
 data/
 ├── workspace/   session location; .opencode/agents/*.md, .opencode/skills/<id>/SKILL.md,
-│                opencode.jsonc (connectors, plugins — written by the app)
+│                opencode.jsonc (connectors, plugins - written by the app)
 ├── share/       XDG_DATA_HOME → opencode/opencode.db (sessions, messages), logs
 ├── config/      XDG_CONFIG_HOME
 └── state/       XDG_STATE_HOME → harness-token-<port> (0600, minted per boot)
@@ -159,7 +159,7 @@ sharing one SQLite database would fight over session state.
   doesn't freeze the roster.
 - Approvals are seeded at boot and kept live from events.
 - Prompt queueing is a harness feature surfaced by the UI, not a UI retry.
-- Reasoning parts (`session.reasoning.*`) are intentionally hidden — the UI
+- Reasoning parts (`session.reasoning.*`) are intentionally hidden - the UI
   renders final text + tool activity only.
 
 ## Repository map

@@ -15,7 +15,7 @@ const OPTIONS: Array<{
 ];
 
 /**
- * App settings. Appearance is the first section — System follows the
+ * App settings. Appearance is the first section - System follows the
  * desktop, Light and Dark pin it. Saved locally; painted pre-boot so the
  * app never flashes the wrong theme.
  */

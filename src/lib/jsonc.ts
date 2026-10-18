@@ -4,7 +4,7 @@
  *
  * The marketplace adds/removes `plugins` array entries and
  * `mcp.servers.<name>` objects. These helpers locate value spans and rewrite
- * only what they touch — comments and formatting everywhere else stay
+ * only what they touch - comments and formatting everywhere else stay
  * byte-identical. (Entries *inside* an edited value are re-serialized.)
  */
 
@@ -47,7 +47,7 @@ function skipWsAndComments(text: string, i: number): number {
   }
 }
 
-/** Strip comments (string-aware). For parsing/preview only — never write this back. */
+/** Strip comments (string-aware). For parsing/preview only - never write this back. */
 export function stripComments(text: string): string {
   let out = "";
   let i = 0;

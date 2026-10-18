@@ -1,15 +1,15 @@
-# runtime datafolder — everything portable lives here, never commit contents
+# runtime datafolder - everything portable lives here, never commit contents
 data/share/
 data/config/
 data/state/
-# keep workspace placeholder? no — workspace is user files, ignore too
+# keep workspace placeholder? no - workspace is user files, ignore too
 data/workspace/*
 
 node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
-# 200MB+ harness sidecar — fetch locally, never commit:
+# 200MB+ harness sidecar - fetch locally, never commit:
 #   cp "$(which opencode)" src-tauri/binaries/opencode-$(rustc -vV | sed -n 's/^host: //p')
 src-tauri/binaries/
 *.log

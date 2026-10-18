@@ -21,20 +21,20 @@ type Session = { id: string; kind?: string; bot?: string };
 type ChatMsg = {
   role: "user" | "assistant" | "tool"; text: string; key: string;
   time?: number; agent?: string; mcps?: string[]; rep?: number;
-  /** Tool name for tool rows — powers the compact activity labels. */
+  /** Tool name for tool rows - powers the compact activity labels. */
   tool?: string;
   /** Tool row that ended in failure. */
   err?: boolean;
-  /** Sent mid-turn — the harness runs it right after the current turn. */
+  /** Sent mid-turn - the harness runs it right after the current turn. */
   queued?: boolean;
-  /** Harness inbox id — how the optimistic bubble folds into the stored thread. */
+  /** Harness inbox id - how the optimistic bubble folds into the stored thread. */
   inboxID?: string;
 };
 /** One stroke of the live turn feed: streamed text or a tool being run. */
 type LiveEntry =
   | { kind: "text"; key: string; text: string }
   | { kind: "tool"; key: string; name: string; text: string; refs: string[]; state: "running" | "done" | "error" };
-/** Unified tool row (stored or live) — consecutive ones group into one line. */
+/** Unified tool row (stored or live) - consecutive ones group into one line. */
 type ToolItem = { key: string; name: string; text: string; refs: string[]; state: "running" | "done" | "error"; rep?: number };
 type DisplayRow =
   | { kind: "msg"; m: ChatMsg; tkey: string; streamed?: boolean }
@@ -52,7 +52,7 @@ const STARTERS = [
 /** How long without ANY event before we assume a turn was dropped. */
 const WATCHDOG_MS = 100_000;
 
-/** Events that mean "the bot is alive" — reset the per-session watchdog. */
+/** Events that mean "the bot is alive" - reset the per-session watchdog. */
 const ACTIVITY_EVENTS = new Set([
   "session.text.started", "session.text.delta", "session.text.ended",
   "session.reasoning.started", "session.reasoning.delta", "session.reasoning.ended",
@@ -111,7 +111,7 @@ function toolPhrase(name: string, refs: string[]): string {
   return TOOL_PHRASES[name] ?? `using ${name}`;
 }
 
-/** Short, human-readable hint for a tool's input — never dumps raw JSON.
+/** Short, human-readable hint for a tool's input - never dumps raw JSON.
  *  `execute`/`bash` scripts are the worst spam offenders, so they get a
  *  one-line hint (or nothing when the MCP chips already say enough). */
 function toolDetail(name: string, input: unknown, refs: string[]): string {
@@ -155,7 +155,7 @@ DOMPurify.addHook("afterSanitizeElements", (node) => {
   wrap.appendChild(el);
 });
 
-/** Parse cache — streaming re-renders the same text on every delta. */
+/** Parse cache - streaming re-renders the same text on every delta. */
 const mdCache = new Map<string, string>();
 
 /** Markdown → sanitized HTML (full GFM: tables, lists, links, quotes, code). */
@@ -178,7 +178,7 @@ function fmtTime(ts?: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-/** Elapsed clock for the working row — "0:42". */
+/** Elapsed clock for the working row - "0:42". */
 function fmtClock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -235,11 +235,11 @@ export function App() {
   const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const watchdogs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const busyRef = useRef<Record<string, boolean>>({});
-  /** When each session's current turn started — powers the elapsed clock. */
+  /** When each session's current turn started - powers the elapsed clock. */
   const turns = useRef<Record<string, number>>({});
   /** Mirror of `live` readable from event handlers without stale closures. */
   const liveRef = useRef<Record<string, LiveEntry[]>>({});
-  /** Mirror of `pending` — same reason. */
+  /** Mirror of `pending` - same reason. */
   const pendingRef = useRef<Record<string, ChatMsg[]>>({});
   /** Inbox ids whose delivery event arrived before we knew the id (HTTP race). */
   const deliveredInbox = useRef<Set<string>>(new Set());
@@ -277,7 +277,7 @@ export function App() {
       return n;
     });
 
-  /** A chat you just opened is "seen" — clears its roster dot. */
+  /** A chat you just opened is "seen" - clears its roster dot. */
   const markSeen = (sid: string) =>
     setUnread((m) => {
       if (!m[sid]) return m;
@@ -297,14 +297,14 @@ export function App() {
       delete watchdogs.current[sid];
       setSessionBusy(sid, false);
       if (sid === activeIDRef.current) {
-        say("This turn went quiet — reloading the thread to catch up.");
+        say("This turn went quiet. Reloading the thread to catch up.");
         loadThread(sid);
         loadPerms(sid);
       }
     }, WATCHDOG_MS);
   };
 
-  /** Live-feed helpers — the feed is keyed per session and mirrored in a ref
+  /** Live-feed helpers - the feed is keyed per session and mirrored in a ref
    *  so event handlers can read/update it without stale closures. */
   const replaceLive = (fn: (prev: Record<string, LiveEntry[]>) => Record<string, LiveEntry[]>) => {
     const next = fn(liveRef.current);
@@ -320,7 +320,7 @@ export function App() {
     setPending(next);
   };
 
-  /** A delivered inbox message is now part of the conversation — move its
+  /** A delivered inbox message is now part of the conversation - move its
    *  optimistic bubble into the thread under the id the store will use (the
    *  harness keeps the inbox id as the user message id, verified live), so
    *  the later stored version replaces it seamlessly. */
@@ -473,7 +473,7 @@ export function App() {
         } else if (m.type === "assistant") {
           for (const p of m.content) {
             if (p.type === "text" && p.text) out.push({ role: "assistant", text: p.text, key: `${m.id}-${out.length}`, time: m.time.created, agent: m.agent });
-            // NOTE: reasoning parts are the model's internal chain-of-thought —
+            // NOTE: reasoning parts are the model's internal chain-of-thought -
             // deliberately not rendered. Only final text + tool activity show.
             else if (p.type === "tool") {
               const refs = mcpRefs(p.state.input);
@@ -492,7 +492,7 @@ export function App() {
         }
       }
       setMsgs(out);
-      // Optimistic "you" bubbles fold into the stored thread once they land —
+      // Optimistic "you" bubbles fold into the stored thread once they land -
       // send() never waits for the echo, so this is the cleanup path.
       replacePending((prev) => {
         const list = prev[id];
@@ -509,7 +509,7 @@ export function App() {
         return n;
       });
       // Drop live-stream strokes the stored thread now covers (mid-turn
-      // resyncs only — turns otherwise paint from the feed until they end).
+      // resyncs only - turns otherwise paint from the feed until they end).
       const keys = new Set(out.map((mm) => mm.key));
       const storedTexts = new Set(out.filter((m) => m.role === "assistant").map((m) => m.text.trim()));
       replaceLive((prev) => {
@@ -562,7 +562,7 @@ export function App() {
     if (existing && (await chatHasStaleSkillMarker(existing.id))) {
       // Chats from older builds got a skill's full text force-injected when
       // they were created (and the bot opened the conversation talking about
-      // it). That's read-only history and can't be cleaned in place — archive
+      // it). That's read-only history and can't be cleaned in place - archive
       // the chat (kept in the DB as dm-archived) and give the bot a fresh,
       // quiet one.
       try {
@@ -605,7 +605,7 @@ export function App() {
 
   /**
    * One-thought bot creation: whatever the user typed becomes the bot. Name is
-   * derived from the text (or "helper" for an empty prompt) and stored — the
+   * derived from the text (or "helper" for an empty prompt) and stored - the
    * user can click the name in settings to change it later.
    */
   const createBot = async (raw: string) => {
@@ -662,7 +662,7 @@ export function App() {
     armWatchdog(id!);
     try {
       // The harness queues prompts sent mid-turn (inbox), so sending while
-      // busy is safe — it runs right after the current turn.
+      // busy is safe - it runs right after the current turn.
       const res = await client.session.prompt({ sessionID: id!, text: t });
       const inboxID = res.id;
       const queued = res.delivery === "queue" || wasBusy;
@@ -672,10 +672,10 @@ export function App() {
           if (!list) return p;
           return { ...p, [id!]: list.map((x) => (x.key === pk ? { ...x, inboxID, queued: x.queued || queued } : x)) };
         });
-        // Delivery can beat the HTTP response — fold it in that case too.
+        // Delivery can beat the HTTP response - fold it in that case too.
         if (deliveredInbox.current.has(inboxID)) foldDelivered(id!, inboxID);
       }
-      if (queued) say("Queued — it will run right after the current step.");
+      if (queued) say("Queued. It runs right after the current step.");
     } catch (e) {
       clearWatchdog(id!);
       if (!wasBusy) setSessionBusy(id!, false);
@@ -762,7 +762,7 @@ export function App() {
     };
 
     /** sessionID of any wire event that carries one (some event families
-     *  carry a different payload — those never arm the watchdog). */
+     *  carry a different payload - those never arm the watchdog). */
     const eventSessionID = (e: V2Event): string => {
       if (!("data" in e)) return "";
       const d = e.data as { sessionID?: unknown };
@@ -791,7 +791,7 @@ export function App() {
         case "session.execution.interrupted":
         case "session.idle": {
           if (!sid) break;
-          if (e.type === "session.execution.failed" && isActive()) say("The turn did not complete — see the thread for details.");
+          if (e.type === "session.execution.failed" && isActive()) say("The turn did not complete. See the thread for details.");
           clearWatchdog(sid);
           delete turns.current[sid];
           setSessionBusy(sid, false);
@@ -821,7 +821,7 @@ export function App() {
             loadThread(sid);
             loadPerms(sid);
           } else {
-            // Finished while you were elsewhere — show a roster dot.
+            // Finished while you were elsewhere - show a roster dot.
             setUnread((m) => (m[sid] ? m : { ...m, [sid]: true }));
           }
           refreshSessions();
@@ -894,7 +894,7 @@ export function App() {
           break;
         }
         case "session.inbox.delivered": {
-          // The prompt left the queue and joined the conversation — fold its
+          // The prompt left the queue and joined the conversation - fold its
           // bubble in now (no reload: the in-flight assistant message would
           // race the live feed).
           const inboxID = e.data.inboxID;
@@ -924,7 +924,7 @@ export function App() {
         case "permission.asked":
         case "permission.replied":
           // Keep the whole team's "needs you" state accurate, not just the
-          // chat on screen — that's what makes it feel like colleagues.
+          // chat on screen - that's what makes it feel like colleagues.
           if (sid) loadPerms(sid);
           break;
         case "session.created":
@@ -967,7 +967,7 @@ export function App() {
           console.warn("event stream ended:", (e as Error).message);
         }
         if (stopped) return;
-        // Stream dropped (harness restarted?) — resync, then reconnect.
+        // Stream dropped (harness restarted?) - resync, then reconnect.
         refreshSessions();
         const sid = activeIDRef.current;
         if (sid) {
@@ -1014,7 +1014,7 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stick to the bottom while streaming — but only when already near it, so
+  // Stick to the bottom while streaming - but only when already near it, so
   // reading back through history doesn't get yanked down by every update.
   const lastScrollSession = useRef<string | null>(null);
   useEffect(() => {
@@ -1028,7 +1028,7 @@ export function App() {
 
   const busy = !!(activeID && busySessions[activeID]);
 
-  // Elapsed clock for the working row — ticks only while a bot is working.
+  // Elapsed clock for the working row - ticks only while a bot is working.
   useEffect(() => {
     if (!busy) return;
     setNow(Date.now());
@@ -1188,7 +1188,7 @@ export function App() {
     const compact = skey === lastSender;
     lastSender = skey;
     if (m.role === "user") {
-      // Your side: a tinted bubble on the right, clock above it. No avatar —
+      // Your side: a tinted bubble on the right, clock above it. No avatar -
       // in a solo human/machine thread it would only be noise.
       stream.push(
         <div key={row.tkey} className="slack-msg from-user">
@@ -1232,7 +1232,7 @@ export function App() {
     );
   });
 
-  // The "working" row — current activity + elapsed time. Clusters stay
+  // The "working" row - current activity + elapsed time. Clusters stay
   // collapsed so long tool runs don't flood the chat; this row narrates
   // what's happening right now.
   let runningTool: ToolItem | undefined;
@@ -1269,7 +1269,7 @@ export function App() {
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
       />
       <div className="composer-bar">
-        {busy && <span className="composer-hint">Working — additional messages are queued</span>}
+        {busy && <span className="composer-hint">Working. Additional messages are queued.</span>}
         <span className="spacer" />
         {busy && <button className="send-btn stop" onClick={interrupt} title="Stop"><IconStop size={13} /></button>}
         <button
@@ -1321,7 +1321,7 @@ export function App() {
                         openBot(b.id);
                       }
                     }}
-                    title={[b.description ?? b.id, stText].filter(Boolean).join(" — ")}
+                    title={[b.description ?? b.id, stText].filter(Boolean).join(": ")}
                   >
                     <span className="avatar small">
                       <BotAvatar seed={b.id} color={b.color} size={24} />
@@ -1351,7 +1351,7 @@ export function App() {
                     <button
                       className="bot-row off"
                       onClick={() => setSettingsBot(b.id)}
-                      title={`${b.description ?? b.id} — disabled. Open settings to re-enable.`}
+                      title={`${b.description ?? b.id} is disabled. Open settings to re-enable.`}
                     >
                       <span className="avatar small">
                         <BotAvatar seed={b.id} color={b.color} size={24} />
@@ -1375,7 +1375,7 @@ export function App() {
               const col = st === "connected" ? "var(--green)" : st === "needs_auth" || st === "pending" ? "var(--amber)" : "var(--red)";
               return (
                 <li key={t.name}>
-                  <button className="bot-row" onClick={() => setToolsOpen(true)} title={`${t.name} — ${mcpStatusLabel(st)}`}>
+                  <button className="bot-row" onClick={() => setToolsOpen(true)} title={`${t.name}: ${mcpStatusLabel(st)}`}>
                     <span className="pulse" style={{ background: col }} />
                     <span className="nm">{t.name}</span>
                   </button>
@@ -1394,7 +1394,7 @@ export function App() {
           </ul>
         </nav>
         <footer className="side-foot">
-          <span className="side-status">{harnessOk ? "Ready — bots keep working in the background" : "Starting up…"}</span>
+          <span className="side-status">{harnessOk ? "Ready. Bots keep working in the background" : "Starting up…"}</span>
           <button className="icon-btn" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
             <IconGear size={15} />
           </button>
@@ -1409,8 +1409,8 @@ export function App() {
               <h1>Talk to your bots</h1>
               <div className="lede">
                 {bots.length === 0
-                  ? "Describe what you need — your bot gets a name automatically and opens in chat."
-                  : "Pick a bot and give it a task — it keeps working while you're away."}
+                  ? "Describe what you need. Your bot gets a name automatically and opens in chat."
+                  : "Pick a bot and give it a task. It keeps working while you're away."}
               </div>
               {bots.length > 0 && (
                 <div className="bot-grid">
@@ -1435,7 +1435,7 @@ export function App() {
                   <IconPlus size={15} /> {creating ? "Creating…" : "Create"}
                 </button>
               </div>
-              <div className="hint" style={{ marginTop: 6 }}>Names are chosen automatically — rename anytime from the chat header.</div>
+              <div className="hint" style={{ marginTop: 6 }}>Names are chosen automatically. Rename anytime from the chat header.</div>
             </div>
           </div>
         ) : (
@@ -1463,7 +1463,7 @@ export function App() {
               <div className="perm">
                 {perms.map((p) => (
                   <div key={p.id} className="perm-row">
-                    <span><strong>{activeBot}</strong> wants to {permVerb(p.action)}{p.resources?.length ? `: ${p.resources.join(" ")}` : ""}{p.message ? ` — ${p.message}` : ""}</span>
+                    <span><strong>{activeBot}</strong> wants to {permVerb(p.action)}{p.resources?.length ? `: ${p.resources.join(" ")}` : ""}{p.message ? `. ${p.message}` : ""}</span>
                     <span className="acts">
                       <button onClick={() => replyPerm(p.id, "once")}>Allow</button>
                       <button onClick={() => replyPerm(p.id, "always")}>Always</button>

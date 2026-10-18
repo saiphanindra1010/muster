@@ -1,11 +1,11 @@
 /**
- * Launcher — the ONLY process that knows about the datafolder.
+ * Launcher - the ONLY process that knows about the datafolder.
  *
  * Resolves MUSTER_DATA_DIR (default: the desktop app's data folder, so
  * browser mode and desktop share bots + chat history), exports
  * XDG_* + OPENCODE_DB so `opencode serve` (the harness) stores EVERYTHING
  * inside it, then spawns the server. The web UI / Tauri shell never touch
- * OpenCode storage directly — they talk HTTP to this harness.
+ * OpenCode storage directly - they talk HTTP to this harness.
  *
  * Auth: `opencode serve` prints a per-boot `server password <pw>` and guards
  * the API with HTTP Basic (`www-authenticate: Basic`), user `opencode`.
@@ -13,7 +13,7 @@
  * `$DATA/state/harness-token-<port>` (0600, localhost-only secret; per-port
  * so two launchers never clobber each other's token), and the UI sends
  * `Authorization: Basic base64("opencode:<pw>")` on every request including
- * the SSE stream (see src/lib/opencode.ts — EventSource can't set headers,
+ * the SSE stream (see src/lib/opencode.ts - EventSource can't set headers,
  * so the UI streams via fetch).
  *
  * Env in (see ../../.env.example):
@@ -55,7 +55,7 @@ for (const d of [DATA, SHARE, CONFIG, STATE, WORKSPACE, join(SHARE, "opencode")]
 
 /**
  * Seed starter workspace files (skills etc.) from ./templates. Never
- * overwrites — the workspace belongs to the user once it exists.
+ * overwrites - the workspace belongs to the user once it exists.
  */
 function seedTemplates() {
   const root = join(ROOT, "templates", "workspace");
@@ -102,7 +102,7 @@ try {
   const probe = Bun.listen({ hostname: HOST, port: Number(PORT), socket: { data() {} } });
   probe.stop();
 } catch {
-  console.error(`[muster] port ${PORT} is already in use — another harness/launcher is running. Stop it first (or set MUSTER_PORT).`);
+  console.error(`[muster] port ${PORT} is already in use - another harness/launcher is running. Stop it first (or set MUSTER_PORT).`);
   process.exit(1);
 }
 
@@ -156,14 +156,14 @@ for (let i = 0; i < 60; i++) {
     });
     if (r.ok) {
       ready = true;
-      console.log(`[muster] ready — UI targets ${base} with token from ${TOKEN_FILE}`);
+      console.log(`[muster] ready - UI targets ${base} with token from ${TOKEN_FILE}`);
       console.log(`[muster] dev hint: VITE_OPENCODE_TOKEN=$(cat ${TOKEN_FILE}) VITE_WORKSPACE_DIR=${WORKSPACE} bun run dev:web`);
       break;
     }
   } catch {}
   await Bun.sleep(1000);
 }
-if (!ready) console.error(`[muster] harness did not answer ${base}/api/info within 60s — check serve output above.`);
+if (!ready) console.error(`[muster] harness did not answer ${base}/api/info within 60s - check serve output above.`);
 
 const onSignal = () => proc.kill();
 process.on("SIGINT", onSignal);

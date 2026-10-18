@@ -205,7 +205,7 @@ async function scopedAgents(ws: string): Promise<AgentInfo[]> {
 
 /**
  * Catalog reads right after `location.reload` can come back empty for a
- * moment — discovery is async. Retry briefly so panels don't render "none".
+ * moment - discovery is async. Retry briefly so panels don't render "none".
  */
 async function withDiscovery<T>(fn: () => Promise<T[]>, attempts = 4): Promise<T[]> {
   for (let i = 0; ; i++) {
@@ -240,7 +240,7 @@ export async function listBots(): Promise<BotInfo[]> {
   );
 }
 
-/** Delete only the bot file (no reload/polling) — internal for rename. */
+/** Delete only the bot file (no reload/polling) - internal for rename. */
 async function removeBotFile(slug: string): Promise<void> {
   const ws = workspaceDir();
   if (!ws) throw new Error("Workspace is not ready yet. Try again in a moment.");
@@ -325,7 +325,7 @@ export async function saveBot(
   const prev = prevName ? slugify(prevName) : "";
   if (prev && prev !== slug) await removeBotFile(prev);
   await client.location.reload();
-  // Project agent discovery runs async after load — poll until visible.
+  // Project agent discovery runs async after load - poll until visible.
   // Disabled bots never appear in /api/agent; for them the write itself
   // (readable with disabled:true) is the success condition.
   for (let i = 0; i < 15; i++) {
@@ -343,7 +343,7 @@ export async function saveBot(
   throw new Error("The bot was created but did not appear in the list. Try again.");
 }
 
-/** No fs-delete route in the harness API — delete via its shell API instead. */
+/** No fs-delete route in the harness API - delete via its shell API instead. */
 export async function deleteBot(name: string): Promise<void> {
   const ws = workspaceDir();
   if (!ws) throw new Error("Workspace is not ready yet. Try again in a moment.");
@@ -380,7 +380,7 @@ export async function setBotDisabled(name: string, disabled: boolean): Promise<v
 }
 
 /**
- * Words that carry no naming value — "help me plan trips" should become
+ * Words that carry no naming value - "help me plan trips" should become
  * `plan-trips`, not `help-plan-trips`.
  */
 const NAME_STOPWORDS = new Set([
@@ -395,7 +395,7 @@ const NAME_STOPWORDS = new Set([
 
 /**
  * Pick a short readable bot name from what the user typed. No forms, no
- * questions — the name is derived, stored, and editable later in settings.
+ * questions - the name is derived, stored, and editable later in settings.
  */
 export function deriveBotName(text: string, taken: Set<string>): string {
   const words = text
@@ -441,26 +441,26 @@ const PERSONA_BROWSER_RULES = `${PERSONA_BROWSER_HEAD}
 - Batch a whole browsing flow into one execute block (navigate → wait → extract) and return a small JSON summary, not one turn per micro-step.
 - Extract data with a script that returns JSON; take a snapshot only when you must click something or you are unsure where you are.
 - Wait on conditions, not on fixed sleeps; verify the outcome once after acting.
-- If the same call fails or returns the same thing twice, change approach or report the blocker — never loop.`;
+- If the same call fails or returns the same thing twice, change approach or report the blocker - never loop.`;
 
 /** Marker used by the persona migration so the browser rules patch once. */
 const PERSONA_BROWSER_MARKER = "the `agent-browser` connector is the only browser";
 
 /**
  * The colleague persona every bot gets. A non-empty agent body replaces
- * OpenCode's base prompt — which is the point: bots introduce themselves as
+ * OpenCode's base prompt - which is the point: bots introduce themselves as
  * teammates, and the engine stays invisible in the background.
  */
 export function buildBotPersona(name: string, focus: string): string {
-  return `You are ${name}, ${PERSONA_MARKER} — a digital colleague on their private team.
+  return `You are ${name}, ${PERSONA_MARKER} - a digital colleague on their private team.
 
-Your focus: ${focus.trim() || "general help — whatever the user needs next"}
+Your focus: ${focus.trim() || "general help - whatever the user needs next"}
 
 How you work:
-- You are a teammate, not software. Never describe yourself as an AI assistant, a model, or as OpenCode. OpenCode is the private engine that executes your operations in the background — the user never needs to hear about it. If asked who you are: you are ${name}, one of their bots.
+- You are a teammate, not software. Never describe yourself as an AI assistant, a model, or as OpenCode. OpenCode is the private engine that executes your operations in the background - the user never needs to hear about it. If asked who you are: you are ${name}, one of their bots.
 - Do the work instead of describing it. Use your tools, complete the steps, then give a short, concrete update.
 - Act on your own within your focus; ask before anything destructive or irreversible.
-- Report like a colleague: "Done — …, next I can …". Brief and specific; never restate the request back.
+- Report like a colleague: "Done - …, next I can …". Brief and specific; never restate the request back.
 - If the user asks you to remember something permanently, save it as a skill in your workspace.
 ${PERSONA_BROWSER_RULES}
 ${PERSONA_STALE_NOTE_RULE}
@@ -470,7 +470,7 @@ ${PERSONA_STALE_NOTE_RULE}
 /** Rewrite legacy/empty app-generated bodies to the persona; null means leave as-is. */
 function upgradedSystem(name: string, body: string): string | null {
   if (body.includes(PERSONA_MARKER)) {
-    // Already on the colleague persona — make sure it carries the latest rules.
+    // Already on the colleague persona - make sure it carries the latest rules.
     const last = "- Match the user's language and tone.";
     if (!body.includes(last)) return null;
     let next = body;
@@ -496,7 +496,7 @@ function upgradedSystem(name: string, body: string): string | null {
   const nl = t.indexOf("\n");
   const firstLine = (nl === -1 ? t : t.slice(0, nl)).trim();
   const rest = nl === -1 ? "" : t.slice(nl + 1).trim();
-  // Only the exact openers older app versions generated count as legacy —
+  // Only the exact openers older app versions generated count as legacy -
   // hand-written prompts (even if they start with "You are …") stay untouched.
   const esc = name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   const legacyName = new RegExp(`^You are\\s+${esc}\\s*[.,!]?$`, "i");
@@ -541,7 +541,7 @@ export async function createBotFromPrompt(text: string): Promise<string> {
 
 /**
  * Boot migration: give existing bots the colleague persona. Only bodies that
- * are empty or still use the legacy "You are <name>." template are touched —
+ * are empty or still use the legacy "You are <name>." template are touched -
  * custom prompts are never overwritten. Returns how many bots were checked
  * and how many changed; callers retry while `checked` is 0 (agent discovery
  * is async, so the first list right after boot can still be empty).
@@ -622,7 +622,7 @@ export async function renameBotHistory(from: string, to: string): Promise<void> 
  * True when a chat was polluted by creation-time skill activation: a skill
  * marker exists before the first user message. Activation injected the
  * skill's full text into history and made the model open the chat by talking
- * about it, and markers can't be removed (message history is read-only) — so
+ * about it, and markers can't be removed (message history is read-only) - so
  * callers should archive the chat and start a fresh, quiet one.
  */
 export async function chatHasStaleSkillMarker(sessionID: string): Promise<boolean> {
@@ -633,7 +633,7 @@ export async function chatHasStaleSkillMarker(sessionID: string): Promise<boolea
       .sort((a, b) => a.t - b.t || a.i - b.i)
       .map((x) => x.m);
     for (const m of ordered) {
-      if (m.type === "user") return false; // a real request came first — legit chat
+      if (m.type === "user") return false; // a real request came first - legit chat
       if (m.type === "skill") return true; // injected when the chat was created
     }
     return false;
@@ -650,7 +650,7 @@ export async function listSkills(): Promise<SkillInfo[]> {
       const r = await client.skill.list(ws ? { location: { directory: ws } } : undefined);
       // The harness ships built-in skills ("/builtin/opencode.md",
       // "/builtin/report.md") that teach agents about OpenCode itself. They
-      // are for developing OpenCode or this app — not for the user's bots —
+      // are for developing OpenCode or this app - not for the user's bots -
       // so keep them out of the catalog, the default activation set and the
       // marketplace's "installed" view.
       return r.data.filter((s) => !s.path.startsWith("/builtin/"));

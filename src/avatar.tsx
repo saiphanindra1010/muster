@@ -2,7 +2,7 @@ import { createAvatar } from "@dicebear/core";
 import { bottts } from "@dicebear/collection";
 
 /**
- * Bot avatars: DiceBear "Bottts" robots (style by Pablo Stanley — free for
+ * Bot avatars: DiceBear "Bottts" robots (style by Pablo Stanley - free for
  * personal and commercial use) on pastel backdrops. Same bot id -> same face,
  * so a bot keeps its look across the roster, chat header and message list.
  *

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Close-on-Escape for modal surfaces. The listener is bound once — the
+ * Close-on-Escape for modal surfaces. The listener is bound once - the
  * callback is read through a ref so frequent re-renders (streaming text)
  * don't churn the listener.
  */

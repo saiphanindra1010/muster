@@ -1,8 +1,8 @@
-# Muster — personal bot coworkers on a local OpenCode harness
+# Muster: personal bot coworkers on a local OpenCode harness
 
 Just bots. Sidebar lists your bots, click one to chat. Each bot is an OpenCode
 agent (own system prompt, skills, MCP permissions) executed by a headless
-`opencode serve` harness. Everything stateful lives inside one `data/` folder —
+`opencode serve` harness. Everything stateful lives inside one `data/` folder -
 or, in the desktop app, inside the OS app-data dir.
 
 ```
@@ -25,23 +25,23 @@ muster/
 
 Deeper documentation lives in [`docs/`](docs/README.md):
 
-- [architecture.md](docs/architecture.md) — processes, data flow, the harness protocol, storage, auth
-- [development.md](docs/development.md) — setup, dev loop, sandboxing, verification, builds
-- [design.md](docs/design.md) — design language, tokens, themes, chat anatomy
-- [bots.md](docs/bots.md) — bot files, personas, skills, MCP rules, the marketplace
+- [architecture.md](docs/architecture.md) - processes, data flow, the harness protocol, storage, auth
+- [development.md](docs/development.md) - setup, dev loop, sandboxing, verification, builds
+- [design.md](docs/design.md) - design language, tokens, themes, chat anatomy
+- [bots.md](docs/bots.md) - bot files, personas, skills, MCP rules, the marketplace
 
 ## 1. Prereqs
 
-- Bun >= 1.2 (`bun --version` — you have 1.3.14)
-- OpenCode >= 2.0 (`opencode --version` — you have 2.0.28)
+- Bun >= 1.2 (`bun --version` - you have 1.3.14)
+- OpenCode >= 2.0 (`opencode --version` - you have 2.0.28)
 - A model: local Ollama/LM Studio (no key), cloud keys (see `.env.example`),
-  or the built-in free `opencode/*-free` models (work with no setup — the
+  or the built-in free `opencode/*-free` models (work with no setup - the
   harness auto-picks one when the configured default has no models)
 - Rust **only** for the desktop app. The toolchain is pinned to 1.98 in
-  `src-tauri/rust-toolchain.toml` — rustc 1.99.0 has a reproducible ICE on
+  `src-tauri/rust-toolchain.toml` - rustc 1.99.0 has a reproducible ICE on
   `hashbrown` (`mir_for_ctfe`). Re-evaluate when 1.99.x ships a fix.
 - Heads-up: rustc 1.98.x occasionally SIGSEGVs inside LLVM on this machine
-  (random crates/passes, `error: rustc interrupted by SIGSEGV`) — it is flaky,
+  (random crates/passes, `error: rustc interrupted by SIGSEGV`) - it is flaky,
   not a code problem. Just rerun `bun run tauri:build`; it goes through.
 
 ## 2. Run (browser, one command)
@@ -86,7 +86,7 @@ How it works:
   `<appData>/com.muster.app/muster/data`, and captures the per-boot password
   from its stdout.
 - The UI asks the shell for the harness URL, password and workspace through the
-  `harness_info` / `harness_token` commands at boot — no tokens baked into the
+  `harness_info` / `harness_token` commands at boot - no tokens baked into the
   build, no env vars, no manual `run.sh`.
 - CORS is granted to the webview origins (`tauri://localhost`,
   `http(s)://tauri.localhost`) plus the vite dev server.
@@ -130,17 +130,17 @@ chats), the per-boot password is in `state/harness-token-<port>`. The launcher
 seeds `templates/workspace/` into the workspace on first boot
 (copy-if-missing); the desktop shell does the same under its app-data root.
 
-One caveat when both modes point at the same root: run them **one at a time**
-— two harnesses sharing one SQLite DB would fight over session state.
+One caveat when both modes point at the same root: run them **one at a time**:
+two harnesses sharing one SQLite DB would fight over session state.
 
 ## 5. Connectors (MCP + websearch + providers)
 
-All defined in `opencode.jsonc` — **not** in UI code, so desktop and browser
+All defined in `opencode.jsonc` - **not** in UI code, so desktop and browser
 share them:
 
 - **Providers (OpenAI alternative / local):** `providers.ollama` (no key),
   `lmstudio`, plus cloud via env keys. See https://opencode.ai/v2/docs/providers/
-- **MCP:** `mcp.servers` — local stdio + remote Streamable HTTP + OAuth.
+- **MCP:** `mcp.servers` - local stdio + remote Streamable HTTP + OAuth.
   Install from the **Marketplace** (§6) or manually via the sidebar Tools panel;
   both write the workspace `opencode.jsonc`, so installs persist. Remote servers
   needing sign-in show as `needs_auth`.
@@ -151,16 +151,27 @@ share them:
 ## 6. Marketplace (one-click connectors, plugins, skills)
 
 Sidebar → **Marketplace**: browse, click Install, done. Same mechanics as
-creating a bot — the app writes your workspace config and calls
-`location.reload()` — so installs persist across restarts, no terminal steps.
+creating a bot - the app writes your workspace config and calls
+`location.reload()` - so installs persist across restarts, no terminal steps.
 
 - **Connectors (MCP)** → `mcp.servers.<name>` in `<workspace>/opencode.jsonc`.
-  Cards show live status (connected / needs sign-in). GitHub-style connectors
-  take a token inline (written as an `Authorization: Bearer` header); OAuth-only
-  connectors install immediately and honestly show "Needs sign-in" — finish that
-  from OpenCode with `/mcps`.
+  Cards show live status (connected / sign-in needed). Token connectors
+  (GitHub, Discord) collect their token once in the card; OAuth connectors
+  (Slack, Sentry, Gmail, Google Chat) install with one click and then have a
+  **Sign in** button on the card that opens the browser to finish.
+- **Gmail and Google Chat** additionally need a one-time Google Cloud OAuth
+  client, because Google does not allow clients to register automatically:
+  create a **Web application** client with the **Use this client for an
+  AI-powered agent** option turned on, add `http://127.0.0.1:19876/callback`
+  and `http://127.0.0.1:19877/callback` as redirect URIs, enable the Gmail API,
+  the Gmail MCP API, the Chat API and the Chat MCP API in the project, then put
+  the client ID and secret in `.env` as `GOOGLE_MCP_CLIENT_ID` and
+  `GOOGLE_MCP_CLIENT_SECRET` and restart the app. After that, install and
+  **Sign in** are single clicks. Google sign-ins currently last about an hour
+  (the harness does not request offline access yet); click **Sign in** again to
+  renew.
 - **Plugins (npm)** → `plugins: [...]` in the workspace config; the harness
-  installs the package in the background (~40–60 s — the modal keeps polling
+  installs the package in the background (~40-60 s - the modal keeps polling
   until it turns active). Any npm package can be added by name.
 - **Skills** → `.opencode/skills/<id>/SKILL.md` (bodies bundled with the app).
 - Remove = config entry removed + reload. Everything round-trips through
@@ -171,10 +182,10 @@ The catalog lives in `src/marketplace.json` (ids, npm refs, commands, help).
 
 ## 7. Bots (custom agents with skills + MCP)
 
-Sidebar ＋ (or the field on the home screen) — just say what the bot should
+Sidebar ＋ (or the field on the home screen) - just say what the bot should
 do, one click to create and start chatting. No name form: the name is derived
 from your words ("help me plan trips" → `plan-trips`) and stored; click the
-bot's name in the chat header (or edit it in settings) to rename it later —
+bot's name in the chat header (or edit it in settings) to rename it later -
 its chat history follows the rename. An empty prompt creates a general-purpose
 `helper`. A bot is stored as
 `<workspace>/.opencode/agents/<name>.md` (frontmatter + system prompt body):
@@ -182,8 +193,8 @@ its chat history follows the rename. An empty prompt creates a general-purpose
 - **Skills**: checkbox list from the harness skill catalog. Default = all skills
   on (file stays empty, so future skills apply automatically); unchecking one
   materializes the explicit list. Bots load a skill only when it's relevant to
-  the request — nothing is force-injected when a chat is created. The harness's
-  built-in skills (`opencode`, `report` — OpenCode's own docs and issue-reporting
+  the request - nothing is force-injected when a chat is created. The harness's
+  built-in skills (`opencode`, `report` - OpenCode's own docs and issue-reporting
   know-how) are excluded: they're for developing OpenCode, not for your bots.
   Chats from older builds that got a skill's text injected when they were opened
   are archived (`dm-archived` in the DB, transcript kept) and replaced with a
@@ -193,12 +204,12 @@ its chat history follows the rename. An empty prompt creates a general-purpose
 - **Disable / Enable**: `disabled: true` removes the agent from the harness
   listing; disabled bots appear in the sidebar's "Disabled" section and can be
   re-enabled from their settings. **Delete** permanently removes the file
-  (via the harness shell API — no fs-delete route exists) with a two-click
+  (via the harness shell API - no fs-delete route exists) with a two-click
   confirm.
 - Hand-written permission rules and unknown frontmatter keys round-trip untouched.
 
 Every bot carries a **colleague persona** in its system-prompt body: it speaks
-as one of your bots and never as "OpenCode" — the engine stays invisible
+as one of your bots and never as "OpenCode" - the engine stays invisible
 background plumbing. Bots created before this existed are upgraded once at
 first boot; only empty or legacy app-generated bodies are touched, hand-written
 prompts are never overwritten.
@@ -212,7 +223,7 @@ teaches any bot to create/update skill files when asked ("remember this",
 
 Bots behave like background colleagues, not request/response toys:
 
-- Each bot's turn runs on the harness independently — switch chats, keep
+- Each bot's turn runs on the harness independently - switch chats, keep
   talking to someone else, the work continues. Closing the chat doesn't stop it.
 - **Roster dots** in the sidebar: green pulse = working on a task, amber =
   waiting for your approval, violet = replied while you were away (opening the
@@ -221,7 +232,7 @@ Bots behave like background colleagues, not request/response toys:
 - Messages sent mid-turn are queued by the harness inbox, so you can pile work
   on without waiting.
 - Pending approvals are seeded at boot (`permission.list` per session) and kept
-  live from `permission.asked` / `permission.replied` events — a bot stuck on a
+  live from `permission.asked` / `permission.replied` events - a bot stuck on a
   permission prompt is visible from the roster.
 - Sessions that were mid-turn when the UI went away are re-marked "working" at
   boot (`time.updated > time.idle` heuristic) and re-verified by the stream.
@@ -237,7 +248,7 @@ Bots behave like background colleagues, not request/response toys:
   others. A 100s activity watchdog clears stuck "working" states.
 - `location.reload()` discovery is async (~1s): the UI retries catalog reads
   and polls after writes, so panels and bot lists appear without manual refresh.
-- Reasoning parts (`session.reasoning.*`) are intentionally hidden — the UI
+- Reasoning parts (`session.reasoning.*`) are intentionally hidden - the UI
   renders final text + tool activity only.
 
 ## 10. Scripts
@@ -246,7 +257,7 @@ Bots behave like background colleagues, not request/response toys:
 |---|---|
 | `./run.sh` | harness + UI + open browser (Ctrl+C stops all) |
 | `bun run start` | only the headless harness with data/ isolation |
-| `bun run dev:web` | only the vite UI (needs exported token vars — `run.sh` does this) |
+| `bun run dev:web` | only the vite UI (needs exported token vars - `run.sh` does this) |
 | `bun run build:web` | typecheck + vite build |
 | `bun run tauri:dev` | desktop window in dev mode |
 | `bun run tauri:build` | .deb bundle (needs cargo + system webkit deps) |
@@ -263,7 +274,7 @@ Bots behave like background colleagues, not request/response toys:
 | Stop | `session.interrupt` |
 | Permission prompt | `permission.list` + Allow / Always / Deny (`permission.reply`) |
 | Bot files | `file.read` / `file.write` / `file.list` under `<workspace>/.opencode/agents/`, applied via `location.reload` |
-| Bot avatars | DiceBear **Bottts** robots (style by Pablo Stanley — free for personal and commercial use) on pastel backdrops, seeded by bot id, generated locally as isolated data-URI SVGs — no network, no keys |
+| Bot avatars | DiceBear **Bottts** robots (style by Pablo Stanley - free for personal and commercial use) on pastel backdrops, seeded by bot id, generated locally as isolated data-URI SVGs - no network, no keys |
 | Rename bot | `session.update` (title + metadata) so the DM chat follows the new name |
 | Team roster dots | `permission.list` per session (boot) + global events: `permission.asked/replied`, `session.execution.*`, `session.idle` |
 | Skills / MCP catalogs | `skill.list`, `mcp.list`; skills auto-activated with `session.skill` |

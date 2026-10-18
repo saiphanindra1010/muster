@@ -21,7 +21,7 @@ fi
 PORT="${MUSTER_PORT:-4096}"
 URL="${VITE_OPENCODE_URL:-http://127.0.0.1:$PORT}"
 WEB_PORT=1420
-# Same folder the desktop app uses — one set of bots + chat history in both.
+# Same folder the desktop app uses - one set of bots + chat history in both.
 # Override for a sandbox: MUSTER_DATA_DIR=./data ./run.sh
 DATA_DIR="${MUSTER_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/com.muster.app/muster/data}"
 case "$DATA_DIR" in /*) ;; *) DATA_DIR="$PWD/$DATA_DIR" ;; esac
@@ -30,7 +30,7 @@ TOKEN_FILE="$DATA_DIR/state/harness-token-$PORT"
 
 echo "[run] data folder: $DATA_DIR"
 echo "[run] starting harness on :$PORT ..."
-rm -f "$TOKEN_FILE" # stale passwords never work — each boot mints a new one
+rm -f "$TOKEN_FILE" # stale passwords never work - each boot mints a new one
 bun run start & HARNESS_PID=$!
 
 echo "[run] waiting for harness token ..."

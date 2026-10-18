@@ -17,10 +17,10 @@ Turn the commits since the last release into notes users can read.
    it matters. Drop internal jargon, merge duplicate lines.
 4. Put breaking changes in their own **Breaking** section at the top with a
    one-line migration note.
-5. Output markdown headed `## <version> — <date>`. Skip empty groups.
+5. Output markdown headed `## <version> - <date>`. Skip empty groups.
 
 ## Rules
 
 - One bullet per user-visible change; link the PR when a number is available.
-- Never invent changes — if the history is empty, say so instead of padding.
+- Never invent changes - if the history is empty, say so instead of padding.
 - Keep it short: a long changelog is a changelog nobody reads.

@@ -72,7 +72,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
     if (!draft) return;
     const target = slugify(draft.name);
     if (!target) {
-      setStatus("Enter a name — a single word such as “coach” works.");
+      setStatus("Enter a name. A single word such as “coach” works.");
       return;
     }
     if (target !== botId && (await readBotFile(target)) != null) {
@@ -109,7 +109,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
   const remove = async () => {
     if (!confirmDelete) {
       setConfirmDelete(true);
-      setStatus("Click Delete again to confirm — this cannot be undone.");
+      setStatus("Click Delete again to confirm. This cannot be undone.");
       return;
     }
     try {
@@ -182,7 +182,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
                           }
                         }}
                       />
-                      <span><strong>{label}</strong>{s.description ? ` — ${s.description}` : ""}</span>
+                      <span><strong>{label}</strong>{s.description ? `: ${s.description}` : ""}</span>
                     </label>
                   );
                 })}

@@ -1,4 +1,4 @@
-/* Muster — Tailwind v4 + hand-rolled component classes on shared tokens.
+/* Muster - Tailwind v4 + hand-rolled component classes on shared tokens.
    Two appearances (dark default, light twin) resolved by dataset.theme on
    <html>; every color below is a semantic token so both stay honest. */
 @import "tailwindcss";
@@ -13,7 +13,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Tokens — dark. Contrast figures are against the surface each role sits on.
+   Tokens - dark. Contrast figures are against the surface each role sits on.
 --------------------------------------------------------------------------- */
 :root {
   color-scheme: dark;
@@ -39,7 +39,7 @@
   --txt: #f4f4f5;                    /* 17.9:1 on --bg */
   --strong: #ffffff;
   --dim: #a3a4ad;                    /* 7.9:1 on --bg */
-  --faint: #86868f;                  /* 5.4:1 on --bg — meta text only */
+  --faint: #86868f;                  /* 5.4:1 on --bg - meta text only */
 
   /* Brand + signals */
   --accent: #8b8cf8;                 /* 6.5:1 on --bg */
@@ -80,7 +80,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Tokens — light. Same roles, fluid across daylit rooms.
+   Tokens - light. Same roles, fluid across daylit rooms.
 --------------------------------------------------------------------------- */
 :root[data-theme="light"] {
   color-scheme: light;
@@ -103,7 +103,7 @@
   --txt: #1c1c22;                    /* 15.7:1 on --bg */
   --strong: #0f0f13;
   --dim: #55565e;                    /* 6.7:1 on --bg */
-  --faint: #6b6c78;                  /* 4.9:1 on --bg — meta text only */
+  --faint: #6b6c78;                  /* 4.9:1 on --bg - meta text only */
 
   --accent: #5758d6;                 /* 5.2:1 on --bg */
   --accent-ring: rgba(87, 88, 214, 0.55);
@@ -232,12 +232,12 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .create-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring-soft); }
 .create-row input:disabled { opacity: 0.6; }
 
-/* Clickable bot name in the chat header — opens settings to rename. */
+/* Clickable bot name in the chat header - opens settings to rename. */
 .name-btn { background: none; border: none; color: inherit; padding: 0; cursor: pointer; }
 .name-btn:hover strong { text-decoration: underline; }
 .bot-row .nm { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 
-/* Roster dots — the "digital colleagues" presence layer. */
+/* Roster dots - the "digital colleagues" presence layer. */
 .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .status-dot.working { background: var(--green); animation: status-pulse 1.4s ease-in-out infinite; }
 .status-dot.needs-you { background: var(--amber); box-shadow: 0 0 0 3px var(--warn-bg); }
@@ -354,7 +354,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .slack-msg { display: flex; gap: 12px; width: min(760px, 100%); margin: 0 auto; padding: 7px 24px; }
 .slack-msg:hover { background: var(--row-hover); }
 .slack-msg.compact { padding-top: 2px; padding-bottom: 2px; }
-/* Only truly live rows animate in — history must never flicker or cascade. */
+/* Only truly live rows animate in - history must never flicker or cascade. */
 .slack-msg.live { animation: msg-in 0.18s cubic-bezier(0.2, 0.7, 0.2, 1); }
 @keyframes msg-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .slack-body { flex: 1; min-width: 0; }
@@ -411,7 +411,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .avatar-ghost { width: 32px; flex-shrink: 0; font-size: 10px; color: var(--faint); text-align: center; padding-top: 4px; opacity: 0; transition: opacity 0.12s ease; }
 .slack-msg:hover .avatar-ghost { opacity: 1; }
 
-/* Tool activity — never the subject. Small, faint, indented to the bot's
+/* Tool activity - never the subject. Small, faint, indented to the bot's
    text; a long run of calls collapses into one "N steps" pill that unfolds. */
 .tool-row { padding-left: 68px; }
 .tool-line { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--dim); }
@@ -441,7 +441,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .tool-steps .tool-line { display: flex; flex-wrap: wrap; align-items: center; }
 .tool-line .run-dot, .tool-cluster .run-dot { margin-right: 0; }
 
-/* The working row — a colleague at work, in their own color: what they're
+/* The working row - a colleague at work, in their own color: what they're
    doing in plain words, and for how long. */
 .working-label { display: inline-flex; align-items: center; font-size: 13.5px; padding: 4px 0; }
 .working-label .wl-bot { color: var(--txt); font-weight: 600; margin-right: 5px; }
@@ -589,7 +589,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .bot-section > strong { font-size: 13px; }
 .check { display: flex; gap: 9px; align-items: flex-start; font-size: 13px; font-weight: 400 !important; color: var(--txt) !important; cursor: pointer; }
 .check input { margin-top: 2px; }
-/* Checkbox — designed, not the browser default. */
+/* Checkbox - designed, not the browser default. */
 input[type="checkbox"] {
   appearance: none; -webkit-appearance: none;
   width: 16px; height: 16px; flex: 0 0 auto;
@@ -634,7 +634,7 @@ input[type="color"]:focus-visible { outline: none; border-color: var(--accent); 
   border-radius: 999px; padding: 5px 13px; cursor: pointer; font-size: 12.5px; min-width: 82px;
 }
 .mcp-row button:hover { color: var(--txt); background: var(--hover); }
-/* Tri-state access control (Default / Allow / Deny) — segmented, not a cycle. */
+/* Tri-state access control (Default / Allow / Deny) - segmented, not a cycle. */
 .tri {
   display: inline-flex; align-items: center; gap: 2px; padding: 2px;
   border: 1px solid var(--line); border-radius: 9px; background: var(--bg);

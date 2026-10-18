@@ -13,7 +13,7 @@
 
 ## Appearance & theming
 
-One setting — `system | light | dark` — stored under `muster:appearance`.
+One setting - `system | light | dark` - stored under `muster:appearance`.
 
 - `index.html` resolves it before first paint (no flash of the wrong theme).
 - `src/theme.ts` owns it after that: `applyAppearance()` paints
@@ -39,19 +39,19 @@ the surface each role sits on (e.g. your chat bubble holds 13.1:1 in dark and
 
 ## Chat anatomy
 
-- **Header** — bot avatar, name, model picker, settings gear. Renaming happens
+- **Header**: bot avatar, name, model picker, settings gear. Renaming happens
   here or in the bot settings drawer.
-- **Thread** — oldest-first. Your messages sit in the accent bubble on the
+- **Thread**: oldest-first. Your messages sit in the accent bubble on the
   right; bot text renders as sanitized GFM (`marked` + `DOMPurify`) and links
-  open outside the app. Reasoning parts are intentionally hidden — the UI
+  open outside the app. Reasoning parts are intentionally hidden - the UI
   shows final text plus tool activity.
-- **Tool runs** — collapsed lines with a human phrase ("Searched the web",
+- **Tool runs**: collapsed lines with a human phrase ("Searched the web",
   "Ran a command"); `execute`/`bash` scripts reduce to a one-line hint, never
   raw JSON. MCP calls render as chips naming the connector they route to.
-- **Approvals** — Allow / Always / Deny cards, seeded at boot and kept live
+- **Approvals**: Allow / Always / Deny cards, seeded at boot and kept live
   from events.
-- **Composer** — autosize; Enter sends, Shift+Enter inserts a newline. While a
-  bot works the send button becomes Stop and the hint reads "Working —
+- **Composer**: autosize; Enter sends, Shift+Enter inserts a newline. While a
+  bot works the send button becomes Stop and the hint reads "Working -
   additional messages are queued"; queued messages carry a `queued` tag until
   they run.
 
@@ -71,7 +71,7 @@ at.
 
 ## Bot identity
 
-Avatars are DiceBear **Bottts** robots on pastel backdrops, seeded by bot id —
+Avatars are DiceBear **Bottts** robots on pastel backdrops, seeded by bot id -
 same bot, same face everywhere. A bot's `color` frontmatter overrides the
 pastel. They render as isolated data-URI `<img>`s on purpose (Bottts SVGs
 share a mask id and would bleed into each other inline). Style by Pablo

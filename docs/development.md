@@ -24,7 +24,7 @@ cp .env.example .env   # optional: provider + websearch keys
 | --- | --- |
 | `./run.sh` | harness + UI + open browser (Ctrl+C stops all) |
 | `bun run start` | only the headless harness with data/ isolation |
-| `bun run dev:web` | only the Vite UI (needs exported token vars — `run.sh` does this) |
+| `bun run dev:web` | only the Vite UI (needs exported token vars - `run.sh` does this) |
 | `bun run build:web` | typecheck + production build of the UI |
 | `bun run tauri:dev` | desktop window in dev mode |
 | `bun run tauri:build` | .deb bundle (needs cargo + system webkit deps) |
@@ -44,7 +44,7 @@ it never clashes with a dev harness on 4096.
 | `OPENCODE_DISABLE_PRUNE=1` | keep all sessions (forwarded default) |
 
 `.env` at the repo root is loaded by Bun for the launcher. `VITE_*` vars do
-**not** reach `vite dev` from there — `run.sh` exports them explicitly.
+**not** reach `vite dev` from there - `run.sh` exports them explicitly.
 
 ## Data folder & sandboxing
 
@@ -60,7 +60,7 @@ time.
 
 ## Verifying changes
 
-Typecheck and build with real Node — bun's JSC crashes intermittently on tsc:
+Typecheck and build with real Node - bun's JSC crashes intermittently on tsc:
 
 ```sh
 node node_modules/typescript/lib/tsc.js --noEmit -p src/tsconfig.json
@@ -89,7 +89,7 @@ node node_modules/vite/bin/vite.js --port 1430 --strictPort
 ```
 
 Drive it with `playwright-core` + system Chrome
-(`executablePath: /usr/bin/google-chrome`). Wait for `domcontentloaded` —
+(`executablePath: /usr/bin/google-chrome`). Wait for `domcontentloaded` -
 **never `networkidle`**: the SSE stream keeps the network open by design.
 
 ## Desktop build
@@ -103,7 +103,7 @@ bun run tauri:build   # .deb at src-tauri/target/release/bundle/deb/
 ## Toolchain notes for this machine
 
 - rustc 1.98.x occasionally SIGSEGVs inside LLVM
-  (`error: rustc interrupted by SIGSEGV`). It is flaky, not a code problem —
+  (`error: rustc interrupted by SIGSEGV`). It is flaky, not a code problem -
   rerun the build.
 - bun-run `tsc` intermittently crashes in JSC
   (`bindParentToChildIgnoringJSDoc`); retry, or run TypeScript with Node as

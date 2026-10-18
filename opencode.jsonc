@@ -37,7 +37,7 @@
     "lmstudio": {
       "settings": { "baseURL": "http://127.0.0.1:1234/v1" }
     }
-    // Cloud providers need no config here — just set the key env var
+    // Cloud providers need no config here - just set the key env var
     // (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) or run /connect in the UI.
     // For an OpenAI-compatible gateway ("dots" / self-hosted):
     // "company": {

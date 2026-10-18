@@ -1,7 +1,7 @@
 /**
  * Marketplace: one install path for connectors (MCP servers), plugins and
  * skills. Every install is a file edit in the workspace followed by
- * `location.reload()` — the same mechanism bots use — so installs persist
+ * `location.reload()` - the same mechanism bots use - so installs persist
  * and the harness picks them up like any other project configuration.
  *
  * - Connectors + plugins land in the workspace `opencode.jsonc`
@@ -26,11 +26,15 @@ import browserCraftSkill from "../marketplace-skills/browser-craft/SKILL.md?raw"
 
 export type MarketKind = "mcp" | "plugin" | "skill";
 
-export interface McpTokenField {
-  /** Header to write, e.g. "Authorization". */
-  header: string;
-  /** Value prefix, e.g. "Bearer ". */
+export interface McpField {
+  /** Remote: config header to write, e.g. "Authorization". */
+  header?: string;
+  /** Value prefix for headers, e.g. "Bearer ". */
   prefix?: string;
+  /** Remote: key to write into the server's OAuth block, e.g. "client_id". */
+  oauth?: string;
+  /** Local: environment variable to write, e.g. "DISCORD_TOKEN". */
+  env?: string;
   label: string;
   placeholder?: string;
   help?: string;
@@ -40,11 +44,13 @@ export interface MarketItem {
   id: string;
   kind: MarketKind;
   name: string;
+  /** Key into CONNECTOR_ICONS; falls back to the kind icon. */
+  icon?: string;
   description: string;
   tags?: string[];
   homepage?: string;
   requires?: string[];
-  mcp?: { config: Record<string, unknown>; signin?: boolean; token?: McpTokenField };
+  mcp?: { config: Record<string, unknown>; signin?: boolean; fields?: McpField[]; note?: string };
   plugin?: { package: string };
 }
 
@@ -200,7 +206,7 @@ async function waitForMcp(name: string, ms: number): Promise<void> {
   for (;;) {
     const list = await listMcp();
     if (list.some((s) => s.name === name)) return;
-    if (Date.now() > until) throw new Error(`“${name}” did not start — check the URL or command`);
+    if (Date.now() > until) throw new Error(`“${name}” did not start. Check the URL or command.`);
     await sleep(1200);
   }
 }
@@ -225,7 +231,7 @@ export async function installSkill(id: string): Promise<void> {
     payload: enc.encode(body),
   });
   await client.location.reload();
-  // Discovery is best-effort — the file write is the success condition.
+  // Discovery is best-effort - the file write is the success condition.
   const until = Date.now() + 8000;
   while (Date.now() < until) {
     const list = await listSkills();
@@ -243,15 +249,22 @@ export async function uninstallSkill(id: string): Promise<void> {
 
 /* ------------------------------- entry points ------------------------------ */
 
-export async function installItem(item: MarketItem, token?: string): Promise<void> {
+export async function installItem(item: MarketItem, values?: Record<string, string>): Promise<void> {
   if (item.kind === "mcp") {
     const conf = JSON.parse(JSON.stringify(item.mcp?.config ?? {})) as Record<string, unknown>;
-    const tok = item.mcp?.token;
-    if (tok) {
-      const value = token?.trim() ?? "";
-      if (!value) throw new Error(`${tok.label} is required to connect.`);
-      const headers = (conf.headers ?? {}) as Record<string, string>;
-      conf.headers = { ...headers, [tok.header]: `${tok.prefix ?? ""}${value}` };
+    for (const [i, f] of (item.mcp?.fields ?? []).entries()) {
+      const value = (values?.[String(i)] ?? "").trim();
+      if (!value) throw new Error(`${f.label} is required to connect.`);
+      if (f.oauth) {
+        const oauth = (conf.oauth ?? {}) as Record<string, string>;
+        conf.oauth = { ...oauth, [f.oauth]: value };
+      } else if (f.env) {
+        const environment = (conf.environment ?? {}) as Record<string, string>;
+        conf.environment = { ...environment, [f.env]: value };
+      } else if (f.header) {
+        const headers = (conf.headers ?? {}) as Record<string, string>;
+        conf.headers = { ...headers, [f.header]: `${f.prefix ?? ""}${value}` };
+      }
     }
     return installMcpServer(item.id, conf);
   }
