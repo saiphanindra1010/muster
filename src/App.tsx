@@ -3,8 +3,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { McpServer, PermissionRequest, V2Event } from "@opencode/client";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
-import { chatHasStaleSkillMarker, createBotFromPrompt, listBots, listDisabledBots, listMcp, mcpStatusLabel, upgradeBotPersonas } from "./lib/bots";
-import { useEscape } from "./lib/useEscape";
+import { chatHasStaleSkillMarker, createUntitledBot, deriveBotTitle, listBots, listDisabledBots, listMcp, mcpStatusLabel, prettyBotName, upgradeBotPersonas } from "./lib/bots";
 import {
   IconActivity, IconArrowUp, IconCheck, IconChevronDown, IconCopy,
   IconGear, IconMark, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
@@ -12,8 +11,7 @@ import {
 import { BotAvatar } from "./avatar";
 import { BotSettings } from "./Bots";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { Settings } from "./Settings";
-import { applyAppearance, loadAppearance, watchSystemAppearance, type Appearance } from "./theme";
+import { applyAppearance, watchSystemAppearance } from "./theme";
 import { Tools } from "./Tools";
 import { Marketplace } from "./Marketplace";
 
@@ -43,14 +41,58 @@ type ModelOpt = { key: string; providerID: string; id: string };
 type BotMeta = { id: string; color?: string; description?: string };
 
 const STARTERS = [
-  "Introduce yourself",
-  "Remember that I prefer short answers",
-  "What skills do you have?",
-  "What can you help with?",
+  "Plan a weekend trip",
+  "Find me a good movie tonight",
+  "Research a topic for me",
+  "Review a piece of code",
 ];
 
 /** How long without ANY event before we assume a turn was dropped. */
 const WATCHDOG_MS = 100_000;
+
+/** Display names for bots whose handle is still "untitled" (local, private). */
+const BOT_NAMES_KEY = "muster.botNames.v1";
+
+function loadBotNames(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(BOT_NAMES_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed)) if (typeof v === "string" && v.trim()) out[k] = v.trim();
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function persistBotNames(names: Record<string, string>) {
+  try {
+    localStorage.setItem(BOT_NAMES_KEY, JSON.stringify(names));
+  } catch {}
+}
+
+/** Roster order: newest bot first, so a fresh bot appears at the top. */
+const BOT_ORDER_KEY = "muster.botOrder.v1";
+
+function loadBotOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(BOT_ORDER_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string" && !!x);
+  } catch {
+    return [];
+  }
+}
+
+function persistBotOrder(ids: string[]) {
+  try {
+    localStorage.setItem(BOT_ORDER_KEY, JSON.stringify(ids));
+  } catch {}
+}
 
 /** Events that mean "the bot is alive" - reset the per-session watchdog. */
 const ACTIVITY_EVENTS = new Set([
@@ -121,13 +163,16 @@ function toolDetail(name: string, input: unknown, refs: string[]): string {
     const p = rec.filePath ?? rec.path ?? rec.filename;
     if (typeof p === "string" && p) return ` ${p}`;
   }
-  if (name === "execute" || name === "bash") {
-    const code = typeof input === "string" ? input : rec.code ?? rec.command ?? "";
+  if (name === "bash") {
+    const code = typeof input === "string" ? input : rec.command ?? "";
     const line = String(code).split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#!"));
     if (!line) return "";
     const clean = line.replace(/^(\/\/|#)\s?/, "").replace(/\s+/g, " ");
     return ` ${clean.slice(0, 72)}${clean.length > 72 ? "…" : ""}`;
   }
+  // `execute` scripts are internal glue (often one line of tool routing) and
+  // add noise, not meaning - the MCP chips already say where the call goes.
+  if (name === "execute") return "";
   let j = "";
   try { j = JSON.stringify(input) ?? ""; } catch {}
   if (!j || j === "{}") return "";
@@ -188,6 +233,17 @@ function fmtTime(ts?: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+/** True when two stored threads would render the same - avoids flicker. */
+function sameThread(a: ChatMsg[], b: ChatMsg[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (x.role !== y.role || x.key !== y.key || x.text !== y.text) return false;
+    if (x.err !== y.err || x.queued !== y.queued || x.agent !== y.agent) return false;
+  }
+  return true;
+}
+
 /** Elapsed clock for the working row - "0:42". */
 function fmtClock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -218,8 +274,6 @@ export function App() {
   const [tools, setTools] = useState<McpServer[]>([]);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [marketOpen, setMarketOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance());
   const [activeID, setActiveID] = useState<string | null>(null);
   const [activeBot, setActiveBot] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
@@ -238,8 +292,8 @@ export function App() {
   // Team status per session: who needs your approval, who has new replies.
   const [needsYou, setNeedsYou] = useState<Record<string, boolean>>({});
   const [unread, setUnread] = useState<Record<string, boolean>>({});
-  const [modal, setModal] = useState<{ text: string; err: string } | null>(null);
-  const [newBotText, setNewBotText] = useState("");
+  const [botNames, setBotNames] = useState<Record<string, string>>(() => loadBotNames());
+  const [botOrder, setBotOrder] = useState<string[]>(() => loadBotOrder());
   const [creating, setCreating] = useState(false);
   const [settingsBot, setSettingsBot] = useState<string | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -249,12 +303,23 @@ export function App() {
   const turns = useRef<Record<string, number>>({});
   /** Mirror of `live` readable from event handlers without stale closures. */
   const liveRef = useRef<Record<string, LiveEntry[]>>({});
+  /** rAF handle for coalescing stream deltas into one paint. */
+  const liveRaf = useRef<number | null>(null);
   /** Mirror of `pending` - same reason. */
   const pendingRef = useRef<Record<string, ChatMsg[]>>({});
+  /** Last stored thread per session - makes switching back instant. */
+  const threadCache = useRef<Record<string, ChatMsg[]>>({});
+  /** Per-session load sequence - old responses must never overwrite new ones. */
+  const threadSeq = useRef<Record<string, number>>({});
   /** Inbox ids whose delivery event arrived before we knew the id (HTTP race). */
   const deliveredInbox = useRef<Set<string>>(new Set());
   const activeBotRef = useRef<string | null>(null);
   const activeIDRef = useRef<string | null>(null);
+  /** Composer draft per chat (session id, or `bot:<id>` before the session exists). */
+  const drafts = useRef<Record<string, string>>({});
+  const inputRef = useRef("");
+  const botNamesRef = useRef<Record<string, string>>(botNames);
+  const botOrderRef = useRef<string[]>(botOrder);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -264,10 +329,87 @@ export function App() {
     if (msg) statusTimer.current = setTimeout(() => setStatusMsg(""), 8000);
   };
 
+  /** What the crew sees. Untitled bots get a friendly title from their task. */
+  const botLabel = (id?: string | null) => {
+    if (!id) return "";
+    return botNamesRef.current[id] || prettyBotName(id);
+  };
+
+  const setBotDisplayName = (id: string, raw: string) => {
+    const name = raw.trim();
+    const next = { ...botNamesRef.current };
+    if (name) next[id] = name;
+    else delete next[id];
+    botNamesRef.current = next;
+    persistBotNames(next);
+    setBotNames(next);
+  };
+
+  /** New bots belong at the top of the roster, not buried alphabetically. */
+  const rememberBotAtTop = (id: string) => {
+    const next = [id, ...botOrderRef.current.filter((x) => x !== id)];
+    botOrderRef.current = next;
+    persistBotOrder(next);
+    setBotOrder(next);
+  };
+
+  /** Keep local roster state attached when a bot handle changes. */
+  const migrateBotLocal = (from: string, to: string) => {
+    const names = { ...botNamesRef.current };
+    if (names[from]) {
+      names[to] = names[from];
+      delete names[from];
+      botNamesRef.current = names;
+      persistBotNames(names);
+      setBotNames(names);
+    }
+    if (botOrderRef.current.includes(from)) {
+      const order = botOrderRef.current.map((x) => (x === from ? to : x));
+      botOrderRef.current = order;
+      persistBotOrder(order);
+      setBotOrder(order);
+    }
+  };
+
+  /** Drop local roster state for a deleted bot. */
+  const forgetBotLocal = (id: string) => {
+    const names = { ...botNamesRef.current };
+    if (names[id]) {
+      delete names[id];
+      botNamesRef.current = names;
+      persistBotNames(names);
+      setBotNames(names);
+    }
+    if (botOrderRef.current.includes(id)) {
+      const order = botOrderRef.current.filter((x) => x !== id);
+      botOrderRef.current = order;
+      persistBotOrder(order);
+      setBotOrder(order);
+    }
+  };
+
   const setActiveSession = (id: string | null, bot: string | null) => {
+    const prevID = activeIDRef.current;
+    const prevBot = activeBotRef.current;
+    const prevKey = prevID ?? (prevBot ? `bot:${prevBot}` : "");
+    if (prevKey) drafts.current[prevKey] = inputRef.current;
+    // Each chat keeps its own draft - typing in one never leaks into another.
+    if (prevID !== id || prevBot !== bot) {
+      const nextKey = id ?? (bot ? `bot:${bot}` : "");
+      let next = nextKey ? drafts.current[nextKey] ?? "" : "";
+      if (!next && bot) next = drafts.current[`bot:${bot}`] ?? "";
+      if (nextKey && next) drafts.current[nextKey] = next;
+      inputRef.current = next;
+      setInput(next);
+    }
     activeIDRef.current = id;
+    activeBotRef.current = bot;
     setActiveID(id);
     setActiveBot(bot);
+    requestAnimationFrame(() => {
+      autogrow();
+      if (bot) taRef.current?.focus();
+    });
   };
 
   const setSessionBusy = (sid: string, v: boolean) => {
@@ -321,7 +463,14 @@ export function App() {
     const next = fn(liveRef.current);
     if (next === liveRef.current) return;
     liveRef.current = next;
-    setLive(next);
+    // Coalesce token deltas into one paint per frame - the stream can fire
+    // dozens of events a second and each one would otherwise re-render the app.
+    if (liveRaf.current == null) {
+      liveRaf.current = requestAnimationFrame(() => {
+        liveRaf.current = null;
+        setLive(liveRef.current);
+      });
+    }
   };
 
   const replacePending = (fn: (prev: Record<string, ChatMsg[]>) => Record<string, ChatMsg[]>) => {
@@ -345,8 +494,10 @@ export function App() {
       else delete n[sid];
       return n;
     });
+    const msg: ChatMsg = { ...item, key: inboxID, queued: false, time: item.time ?? Date.now() };
+    const cached = threadCache.current[sid];
+    if (cached && !cached.some((m) => m.key === inboxID)) threadCache.current[sid] = [...cached, msg];
     if (sid === activeIDRef.current) {
-      const msg: ChatMsg = { ...item, key: inboxID, queued: false, time: item.time ?? Date.now() };
       setMsgs((prev) => (prev.some((m) => m.key === inboxID) ? prev : [...prev, msg]));
     }
     deliveredInbox.current.delete(inboxID);
@@ -382,17 +533,29 @@ export function App() {
     activeBotRef.current = activeBot;
   }, [activeBot]);
 
-  // Appearance: light / dark / system. Painted on <html>, saved locally,
-  // and re-applied when the OS flips while set to "system".
+  // Adopt bots that predate the local order (or were created elsewhere) at
+  // the end. The list itself stays stable, so rows never jump around.
   useEffect(() => {
-    applyAppearance(appearance);
-    return watchSystemAppearance(appearance);
-  }, [appearance]);
+    if (!bots.length) return;
+    const known = new Set(botOrderRef.current);
+    const missing = bots.filter((b) => !known.has(b.id)).map((b) => b.id);
+    if (!missing.length) return;
+    const next = [...botOrderRef.current, ...missing];
+    botOrderRef.current = next;
+    persistBotOrder(next);
+    setBotOrder(next);
+  }, [bots]);
 
-  // Escape closes the New bot dialog, except while it's creating.
-  useEscape(() => {
-    if (!creating) setModal(null);
-  });
+  useEffect(() => () => {
+    if (liveRaf.current != null) cancelAnimationFrame(liveRaf.current);
+  }, []);
+
+  // Appearance follows the OS. No app-level override: light/dark are twins,
+  // and the OS setting is the only source of truth.
+  useEffect(() => {
+    applyAppearance();
+    return watchSystemAppearance();
+  }, []);
 
   const refreshSessions = async () => {
     try {
@@ -469,9 +632,50 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harnessOk]);
 
+  const syncInbox = async (sid: string) => {
+    try {
+      const r = await client.session.inbox.list({ sessionID: sid });
+      const stored = new Set(
+        (threadCache.current[sid] ?? []).filter((m) => m.role === "user").map((m) => m.key),
+      );
+      const incoming: ChatMsg[] = [];
+      for (const x of r) {
+        if (x.type !== "user" || !x.payload.text) continue;
+        if (stored.has(x.id)) continue;
+        incoming.push({
+          role: "user",
+          text: x.payload.text,
+          key: `inbox-${x.id}`,
+          time: x.time.created,
+          queued: true,
+          inboxID: x.id,
+        });
+      }
+      replacePending((prev) => {
+        const current = prev[sid] ?? [];
+        const serverIDs = new Set(incoming.map((x) => x.inboxID!));
+        // Keep bubbles still in flight (no inbox id yet) and bubbles whose id
+        // the server has not echoed back - a cancellation event removes those.
+        const extra = current.filter((x) => x.inboxID == null || (!serverIDs.has(x.inboxID) && !stored.has(x.inboxID)));
+        const next = [...incoming, ...extra];
+        const same = current.length === next.length &&
+          current.every((x, i) => x.key === next[i].key && x.text === next[i].text && x.queued === next[i].queued);
+        if (same) return prev;
+        const n = { ...prev };
+        if (next.length) n[sid] = next;
+        else delete n[sid];
+        return n;
+      });
+    } catch {}
+  };
+
   const loadThread = async (id: string) => {
+    const seq = (threadSeq.current[id] ?? 0) + 1;
+    threadSeq.current[id] = seq;
     try {
       const r = await client.message.list({ sessionID: id });
+      // A slower request for a chat the user already left must never paint.
+      if (threadSeq.current[id] !== seq) return;
       // The harness returns newest-first; chats read oldest-first.
       const ordered = r.data
         .map((m, i) => ({ m, t: m.time.created, i }))
@@ -482,16 +686,19 @@ export function App() {
         if (m.type === "user" && m.text) {
           out.push({ role: "user", text: m.text, key: m.id ?? Math.random().toString(), time: m.time.created });
         } else if (m.type === "assistant") {
-          for (const p of m.content) {
-            if (p.type === "text" && p.text) out.push({ role: "assistant", text: p.text, key: `${m.id}-${out.length}`, time: m.time.created, agent: m.agent });
-            // NOTE: reasoning parts are the model's internal chain-of-thought -
-            // deliberately not rendered. Only final text + tool activity show.
-            else if (p.type === "tool") {
+          // Narration before a tool call ("Let me check…") is process, not an
+          // answer. Drop it so the thread reads like prose instead of a diary.
+          const narrating = m.finish === "tool-calls";
+          m.content.forEach((p, idx) => {
+            if (p.type === "text" && p.text) {
+              if (narrating) return;
+              out.push({ role: "assistant", text: p.text, key: `${m.id}-t${idx}`, time: m.time.created, agent: m.agent });
+            } else if (p.type === "tool") {
               const refs = mcpRefs(p.state.input);
               out.push({
                 role: "tool",
                 text: `${p.name}${toolDetail(p.name, p.state.input, refs)}`,
-                key: p.id ?? `${m.id}-${out.length}`,
+                key: p.id ?? `${m.id}-x${idx}`,
                 time: m.time.created,
                 agent: m.agent,
                 mcps: refs,
@@ -499,20 +706,27 @@ export function App() {
                 err: p.state.status === "error",
               });
             }
-          }
+            // NOTE: reasoning parts are the model's internal chain-of-thought -
+            // deliberately not rendered. Only final text + tool activity show.
+          });
         }
       }
-      setMsgs(out);
+      threadCache.current[id] = out;
+      if (id === activeIDRef.current) setMsgs((prev) => sameThread(prev, out) ? prev : out);
       // Optimistic "you" bubbles fold into the stored thread once they land -
-      // send() never waits for the echo, so this is the cleanup path.
+      // send() never waits for the echo, so this is the cleanup path. Only the
+      // inbox id is authoritative for a queued bubble; a text+time fallback
+      // would swallow a second identical "continue".
       replacePending((prev) => {
         const list = prev[id];
         if (!list?.length) return prev;
-        const keep = list.filter((p) =>
-          !out.some((m) =>
+        const keep = list.filter((p) => {
+          if (p.inboxID != null) return !out.some((m) => m.role === "user" && m.key === p.inboxID);
+          return !out.some((m) =>
             m.role === "user" &&
-            ((p.inboxID != null && m.key === p.inboxID) ||
-              (m.text === p.text && (!p.time || !m.time || Math.abs((m.time ?? 0) - p.time) < 120_000)))));
+            m.text === p.text &&
+            (!p.time || !m.time || Math.abs((m.time ?? 0) - p.time) < 120_000));
+        });
         if (keep.length === list.length) return prev;
         const n = { ...prev };
         if (keep.length) n[id] = keep;
@@ -543,6 +757,7 @@ export function App() {
         for (const k of s) if (clusterKeys.has(k)) n.add(k);
         return n.size === s.size ? s : n;
       });
+      void syncInbox(id);
     } catch {}
   };
 
@@ -578,7 +793,9 @@ export function App() {
   };
 
   /** Open a bot chat, creating its session on first contact. */
+  const openSeq = useRef(0);
   const openBot = async (botID: string) => {
+    const seq = ++openSeq.current;
     let existing = sessions.find((s) => s.kind === "dm" && s.bot === botID);
     if (existing && (await chatHasStaleSkillMarker(existing.id))) {
       // Chats from older builds got a skill's full text force-injected when
@@ -595,12 +812,13 @@ export function App() {
       existing = undefined;
       refreshSessions();
     }
+    if (seq !== openSeq.current) return;
     if (existing) {
       setActiveSession(existing.id, botID);
       markSeen(existing.id);
-      setMsgs([]);
+      // Show the last known thread immediately, then refresh in the background.
+      setMsgs(threadCache.current[existing.id] ?? []);
       setPerms([]);
-      replaceLive(() => ({}));
       loadThread(existing.id);
       loadPerms(existing.id);
       syncSessionModel(existing.id);
@@ -610,38 +828,37 @@ export function App() {
       const s = await client.session.create({
         location: sessionLocation(),
         agent: botID,
-        title: botID,
+        title: botLabel(botID),
         metadata: { kind: "dm", bot: botID },
       });
+      if (seq !== openSeq.current) return;
       setActiveSession(s.id, botID);
       setMsgs([]);
       setPerms([]);
-      replaceLive(() => ({}));
       refreshSessions();
-      setTimeout(() => taRef.current?.focus(), 50);
+      requestAnimationFrame(() => taRef.current?.focus());
     } catch (e) {
-      say(`Could not open ${botID}: ${(e as Error).message}`);
+      if (seq === openSeq.current) say(`Could not open ${botLabel(botID)}: ${(e as Error).message}`);
     }
   };
 
   /**
-   * One-thought bot creation: whatever the user typed becomes the bot. Name is
-   * derived from the text (or "helper" for an empty prompt) and stored - the
-   * user can click the name in settings to change it later.
+   * One click, one bot. No form: the bot opens as "Untitled", greets the user
+   * in an empty chat, and takes its display name from the first real task.
    */
-  const createBot = async (raw: string) => {
+  const createQuickBot = async () => {
     if (creating) return;
     setCreating(true);
     try {
-      const slug = await createBotFromPrompt(raw);
-      setModal(null);
-      setNewBotText("");
+      const taken = new Set<string>(["build", "plan", "general", "explore", "compaction", "title", "summary"]);
+      for (const b of bots) taken.add(b.id);
+      for (const b of disabledBots) taken.add(b.id);
+      const slug = await createUntitledBot(taken);
+      rememberBotAtTop(slug);
       refreshCatalogs();
       await openBot(slug);
     } catch (e) {
-      const msg = `Could not create this bot: ${(e as Error).message}`;
-      setModal((m) => (m ? { ...m, err: msg } : m));
-      if (!modal) say(msg);
+      say(`Could not create a bot: ${(e as Error).message}`);
     } finally {
       setCreating(false);
     }
@@ -649,21 +866,32 @@ export function App() {
 
   const send = async (text?: string) => {
     const t = (text ?? input).trim();
-    if (!t || !activeBot) return;
+    const bot = activeBot;
+    if (!t || !bot) return;
     let id = activeIDRef.current;
     if (!id) {
       try {
         const s = await client.session.create({
           location: sessionLocation(),
-          agent: activeBot,
-          metadata: { kind: "dm", bot: activeBot },
+          agent: bot,
+          title: botLabel(bot),
+          metadata: { kind: "dm", bot },
         });
         id = s.id;
-        setActiveSession(id, activeBot);
+        setActiveSession(id, bot);
         refreshSessions();
       } catch (e) {
         say(`Could not start chat: ${(e as Error).message}`);
         return;
+      }
+    }
+    // An Untitled bot names itself after the first real task. This is a display
+    // title only - the handle stays stable, so no files move and no turn stops.
+    if (/^untitled(?:-\d+)?$/.test(bot) && !botNamesRef.current[bot]) {
+      const title = deriveBotTitle(t);
+      if (title) {
+        setBotDisplayName(bot, title);
+        void client.session.update({ sessionID: id, title }).catch(() => {});
       }
     }
     const wasBusy = !!busyRef.current[id!];
@@ -674,8 +902,12 @@ export function App() {
       ...p,
       [id!]: [...(p[id!] ?? []), { role: "user", text: t, key: pk, time: Date.now(), queued: wasBusy }],
     }));
-    setInput("");
-    requestAnimationFrame(() => autogrow());
+    if (text === undefined) {
+      inputRef.current = "";
+      drafts.current[id!] = "";
+      setInput("");
+      requestAnimationFrame(() => autogrow());
+    }
     if (!wasBusy) {
       setSessionBusy(id!, true);
       turns.current[id!] = turns.current[id!] ?? Date.now();
@@ -707,6 +939,18 @@ export function App() {
         else delete n[id!];
         return n;
       });
+      // Never swallow what the user typed: put it back if the composer is
+      // still empty, or keep it as that chat's draft if they moved on.
+      if (activeIDRef.current === id) {
+        if (!inputRef.current.trim()) {
+          inputRef.current = t;
+          drafts.current[id!] = t;
+          setInput(t);
+          requestAnimationFrame(() => autogrow());
+        }
+      } else if (!(drafts.current[id!] ?? "").trim()) {
+        drafts.current[id!] = t;
+      }
       say(`Could not send: ${(e as Error).message}`);
       return;
     }
@@ -721,6 +965,27 @@ export function App() {
       clearWatchdog(id);
       setSessionBusy(id, false);
       loadThread(id);
+    }
+  };
+
+  /** Pull a queued message back out of the harness inbox. */
+  const cancelQueued = async (p: ChatMsg) => {
+    const id = activeIDRef.current;
+    if (!id || !p.inboxID) return;
+    const inboxID = p.inboxID;
+    const before = pendingRef.current;
+    replacePending((prev) => {
+      const kept = (prev[id] ?? []).filter((x) => x.inboxID !== inboxID);
+      const n = { ...prev };
+      if (kept.length) n[id] = kept;
+      else delete n[id];
+      return n;
+    });
+    try {
+      await client.session.inbox.cancel({ sessionID: id, inboxID });
+    } catch (e) {
+      replacePending(() => before);
+      say(`Could not cancel that message: ${(e as Error).message}`);
     }
   };
 
@@ -800,11 +1065,10 @@ export function App() {
           turns.current[sid] = Date.now();
           setSessionBusy(sid, true);
           armWatchdog(sid);
-          if (isActive()) {
-            // New turn: the stored thread is authoritative up to now.
-            dropFeed(sid);
-            loadThread(sid);
-          }
+          // A new turn invalidates the old feed for every chat, not just the
+          // one on screen - otherwise background chats keep stale strokes.
+          dropFeed(sid);
+          if (isActive()) loadThread(sid);
           break;
         }
         case "session.execution.succeeded":
@@ -852,20 +1116,19 @@ export function App() {
         }
         case "session.text.delta": {
           const d = e.data;
-          if (isActive() && d.delta) {
-            const key = `${d.assistantMessageID}:${d.ordinal}`;
-            mutFeed(sid, (list) => {
-              const i = list.findIndex((x) => x.key === key);
-              if (i === -1) return [...list, { kind: "text", key, text: d.delta }];
-              const n = list.slice();
-              n[i] = { kind: "text", key, text: (list[i] as Extract<LiveEntry, { kind: "text" }>).text + d.delta };
-              return n;
-            });
-          }
+          if (!sid || !d.delta) break;
+          const key = `${d.assistantMessageID}:${d.ordinal}`;
+          mutFeed(sid, (list) => {
+            const i = list.findIndex((x) => x.key === key);
+            if (i === -1) return [...list, { kind: "text", key, text: d.delta }];
+            const n = list.slice();
+            n[i] = { kind: "text", key, text: (list[i] as Extract<LiveEntry, { kind: "text" }>).text + d.delta };
+            return n;
+          });
           break;
         }
         case "session.text.ended": {
-          if (!isActive()) break;
+          if (!sid) break;
           const d = e.data;
           const key = `${d.assistantMessageID}:${d.ordinal}`;
           mutFeed(sid, (list) => {
@@ -879,41 +1142,39 @@ export function App() {
         }
         case "session.tool.input.started": {
           const d = e.data;
-          if (isActive()) {
-            const key = d.id;
-            const name = d.name;
-            mutFeed(sid, (list) =>
-              list.some((x) => x.kind === "tool" && x.key === key)
-                ? list
-                : [...list, { kind: "tool", key, name, text: name, refs: [], state: "running" }],
-            );
-          }
+          if (!sid) break;
+          const key = d.id;
+          const name = d.name;
+          mutFeed(sid, (list) =>
+            list.some((x) => x.kind === "tool" && x.key === key)
+              ? list
+              : [...list, { kind: "tool", key, name, text: name, refs: [], state: "running" }],
+          );
           break;
         }
         case "session.tool.input.ended": {
           const d = e.data;
-          if (isActive()) applyToolInput(sid, d.id, d.text);
+          if (sid) applyToolInput(sid, d.id, d.text);
           break;
         }
         case "session.tool.called": {
           const d = e.data;
-          if (isActive()) applyToolInput(sid, d.id, d.input);
+          if (sid) applyToolInput(sid, d.id, d.input);
           break;
         }
         case "session.tool.success":
         case "session.tool.failed": {
           const d = e.data;
-          if (isActive()) {
-            const key = d.id;
-            const state: "done" | "error" = e.type === "session.tool.failed" ? "error" : "done";
-            mutFeed(sid, (list) => {
-              const i = list.findIndex((x) => x.kind === "tool" && x.key === key);
-              if (i === -1) return list;
-              const n = list.slice();
-              n[i] = { ...(list[i] as Extract<LiveEntry, { kind: "tool" }>), state };
-              return n;
-            });
-          }
+          if (!sid) break;
+          const key = d.id;
+          const state: "done" | "error" = e.type === "session.tool.failed" ? "error" : "done";
+          mutFeed(sid, (list) => {
+            const i = list.findIndex((x) => x.kind === "tool" && x.key === key);
+            if (i === -1) return list;
+            const n = list.slice();
+            n[i] = { ...(list[i] as Extract<LiveEntry, { kind: "tool" }>), state };
+            return n;
+          });
           break;
         }
         case "session.inbox.delivered": {
@@ -1100,13 +1361,29 @@ export function App() {
   const botMeta = (id?: string | null): BotMeta | undefined => bots.find((b) => b.id === id);
 
   const meta = botMeta(activeBot);
+  /** Roster order: locally remembered, newest first. Unknown bots trail. */
+  const orderedBots = (() => {
+    const byID = new Map(bots.map((b) => [b.id, b] as const));
+    const out: BotMeta[] = [];
+    for (const id of botOrder) {
+      const b = byID.get(id);
+      if (b) {
+        out.push(b);
+        byID.delete(id);
+      }
+    }
+    for (const b of bots) if (byID.delete(b.id)) out.push(b);
+    return out;
+  })();
+  /** A fresh bot with no name yet - it introduces itself and waits for a task. */
+  const untitled = !!activeBot && /^untitled(?:-\d+)?$/.test(activeBot) && !botNames[activeBot];
   const model = activeID ? modelsBySession[activeID] ?? "" : "";
 
-  const senderOf = (m: ChatMsg): { name: string; user: boolean; col?: string } => {
-    if (m.role === "user") return { name: "You", user: true };
+  const senderOf = (m: ChatMsg): { name: string; seed: string; user: boolean; col?: string } => {
+    if (m.role === "user") return { name: "You", seed: "you", user: true };
     const id = m.agent ?? activeBot ?? "bot";
     const b = botMeta(m.agent ?? activeBot);
-    return { name: id, user: false, col: b?.color };
+    return { name: botLabel(id), seed: id, user: false, col: b?.color };
   };
 
   const permVerb = (a: string): string =>
@@ -1260,7 +1537,7 @@ export function App() {
       <div key={row.tkey} className={`slack-msg ${compact ? "compact" : ""}${streamed ? " live" : ""}`}>
         {!compact ? (
           <div className="avatar">
-            <BotAvatar seed={s.name} color={s.col} size={32} />
+            <BotAvatar seed={s.seed} color={s.col} size={36} />
           </div>
         ) : (
           <div className="avatar-ghost">{fmtTime(m.time)}</div>
@@ -1304,6 +1581,11 @@ export function App() {
         <div className="slack-head user-head">
           {p.queued && <span className="queued-tag">queued</span>}
           <span className="time">{fmtTime(p.time)}</span>
+          {p.queued && p.inboxID && (
+            <button className="queued-cancel" onClick={() => cancelQueued(p)} title="Remove from the queue">
+              Cancel
+            </button>
+          )}
         </div>
         <div className="slack-text plain bubble">{p.text}</div>
       </div>
@@ -1317,7 +1599,7 @@ export function App() {
         rows={1}
         value={input}
         onChange={(e) => { setInput(e.target.value); autogrow(); }}
-        placeholder={activeBot ? `Give ${activeBot} a task…` : "Pick a bot first"}
+        placeholder={activeBot ? `Give ${botLabel(activeBot)} a task…` : "Pick a bot first"}
         disabled={!activeBot}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
       />
@@ -1345,13 +1627,13 @@ export function App() {
           <b>Muster</b>
           <span className="status"><span className={`pulse ${harnessOk ? "" : "down"}`} />{harnessOk ? "online" : "offline"}</span>
         </div>
-        <button className="newbot-btn" onClick={() => setModal({ text: "", err: "" })}>
-          <IconPlus size={15} /> New bot
+        <button className="newbot-btn" onClick={createQuickBot} disabled={creating}>
+          <IconPlus size={15} /> {creating ? "Creating…" : "New bot"}
         </button>
         <nav>
           <div className="sec-label">Your team</div>
           <ul>
-            {bots.map((b) => {
+            {orderedBots.map((b) => {
               // Roster status: who's mid-task, who needs your OK, who replied.
               const sid = sessions.find((s) => s.kind === "dm" && s.bot === b.id)?.id;
               const st = sid
@@ -1374,13 +1656,18 @@ export function App() {
                         openBot(b.id);
                       }
                     }}
-                    title={[b.description ?? b.id, stText].filter(Boolean).join(": ")}
+                    title={[b.description ?? botLabel(b.id), stText].filter(Boolean).join(": ")}
                   >
-                    <span className="avatar small">
-                      <BotAvatar seed={b.id} color={b.color} size={24} />
+                    <BotAvatar
+                      seed={b.id}
+                      color={b.color}
+                      size={38}
+                      status={st === "working" || st === "needs-you" || st === "done" ? st : undefined}
+                    />
+                    <span className="bot-copy">
+                      <span className="nm">{botLabel(b.id)}</span>
+                      <span className="bot-sub">{stText || b.description || "Ready for a task"}</span>
                     </span>
-                    <span className="nm">{b.id}</span>
-                    {st && <span className={`status-dot ${st}`} title={stText} />}
                     <button
                       className="gear" title={`${b.id} settings`} aria-label={`${b.id} settings`}
                       onClick={(e) => { e.stopPropagation(); setSettingsBot(b.id); }}
@@ -1392,7 +1679,7 @@ export function App() {
               );
             })}
             {bots.length === 0 && (
-              <li><button className="bot-row" onClick={() => setModal({ text: "", err: "" })}>Create your first bot</button></li>
+              <li><button className="bot-row" onClick={createQuickBot} disabled={creating}>Create your first bot</button></li>
             )}
           </ul>
           {disabledBots.length > 0 && (
@@ -1406,10 +1693,11 @@ export function App() {
                       onClick={() => setSettingsBot(b.id)}
                       title={`${b.description ?? b.id} is disabled. Open settings to re-enable.`}
                     >
-                      <span className="avatar small">
-                        <BotAvatar seed={b.id} color={b.color} size={24} />
+                      <BotAvatar seed={b.id} color={b.color} size={34} />
+                      <span className="bot-copy">
+                        <span className="nm">{botLabel(b.id)}</span>
+                        <span className="bot-sub">Disabled</span>
                       </span>
-                      <span className="nm">{b.id}</span>
                     </button>
                   </li>
                 ))}
@@ -1448,9 +1736,6 @@ export function App() {
         </nav>
         <footer className="side-foot">
           <span className="side-status">{harnessOk ? "Ready. Bots keep working in the background" : "Starting up…"}</span>
-          <button className="icon-btn" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
-            <IconGear size={15} />
-          </button>
         </footer>
       </aside>
 
@@ -1467,39 +1752,29 @@ export function App() {
               </div>
               {bots.length > 0 && (
                 <div className="bot-grid">
-                  {bots.map((b) => (
+                  {orderedBots.map((b) => (
                     <button key={b.id} className="bot-card-btn" onClick={() => openBot(b.id)}>
-                      <BotAvatar seed={b.id} color={b.color} size={36} />
-                      <span style={{ minWidth: 0 }}><b>{b.id}</b><span>{b.description || "No description yet"}</span></span>
+                      <BotAvatar seed={b.id} color={b.color} size={46} />
+                      <span style={{ minWidth: 0 }}><b>{botLabel(b.id)}</b><span>{b.description || "Ready for a task"}</span></span>
                     </button>
                   ))}
                 </div>
               )}
               <div className="create-row">
-                <input
-                  value={newBotText}
-                  onChange={(e) => setNewBotText(e.target.value)}
-                  placeholder={bots.length === 0 ? "e.g. Plan and organise trips" : "Describe a new bot…"}
-                  autoFocus={bots.length === 0}
-                  disabled={creating}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createBot(newBotText); } }}
-                />
-                <button className="btn-primary" onClick={() => createBot(newBotText)} disabled={creating}>
-                  <IconPlus size={15} /> {creating ? "Creating…" : "Create"}
+                <button className="btn-primary" onClick={createQuickBot} disabled={creating}>
+                  <IconPlus size={15} /> {creating ? "Creating…" : bots.length === 0 ? "Create your first bot" : "New bot"}
                 </button>
               </div>
-              <div className="hint" style={{ marginTop: 6 }}>Names are chosen automatically. Rename anytime from the chat header.</div>
+              <div className="hint" style={{ marginTop: 6 }}>One click. It says hi, then takes its name from your first task.</div>
             </div>
           </div>
         ) : (
           <>
             <div className="topbar">
-              <span className="avatar small">
-                <BotAvatar seed={activeBot ?? "?"} color={meta?.color} size={24} />
-              </span>
+              <BotAvatar seed={activeBot} color={meta?.color} size={36} status={busy ? "working" : undefined} />
               <div className="who">
                 <button className="name-btn" title="Rename / edit this bot" onClick={() => setSettingsBot(activeBot)}>
-                  <strong>{activeBot}</strong>
+                  <strong>{botLabel(activeBot)}</strong>
                 </button>
                 {meta?.description && <span className="dim">{meta.description}</span>}
               </div>
@@ -1516,7 +1791,7 @@ export function App() {
               <div className="perm">
                 {perms.map((p) => (
                   <div key={p.id} className="perm-row">
-                    <span><strong>{activeBot}</strong> wants to {permVerb(p.action)}{p.resources?.length ? `: ${p.resources.join(" ")}` : ""}{p.message ? `. ${p.message}` : ""}</span>
+                    <span><strong>{botLabel(activeBot)}</strong> wants to {permVerb(p.action)}{p.resources?.length ? `: ${p.resources.join(" ")}` : ""}{p.message ? `. ${p.message}` : ""}</span>
                     <span className="acts">
                       <button onClick={() => replyPerm(p.id, "once")}>Allow</button>
                       <button onClick={() => replyPerm(p.id, "always")}>Always</button>
@@ -1529,9 +1804,18 @@ export function App() {
             {msgs.length === 0 && !busy && pendList.length === 0 ? (
               <div className="hero">
                 <div className="hero-inner">
-                  <BotAvatar seed={activeBot ?? "?"} color={meta?.color} size={56} />
-                  <h1>Talk to <strong>{activeBot}</strong></h1>
-                  {meta?.description && <div className="lede">{meta.description}</div>}
+                  <BotAvatar seed={activeBot} color={meta?.color} size={72} />
+                  {untitled ? (
+                    <>
+                      <h1>Hi, I'm <strong>{botLabel(activeBot)}</strong></h1>
+                      <div className="lede">What should we work on? Give me a task and I'll take my name from it.</div>
+                    </>
+                  ) : (
+                    <>
+                      <h1>Talk to <strong>{botLabel(activeBot)}</strong></h1>
+                      {meta?.description && <div className="lede">{meta.description}</div>}
+                    </>
+                  )}
                   {composer}
                   {statusMsg && <div className="status-line">{statusMsg}</div>}
                   <div className="suggest">
@@ -1550,7 +1834,7 @@ export function App() {
                       <div className="slack-body">
                         <span className="working-label">
                           <span className="run-dot" style={meta?.color ? { background: meta.color } : undefined} />
-                          <span className="wl-bot">{activeBot}</span>
+                          <span className="wl-bot">{botLabel(activeBot)}</span>
                           <span className="wl-act">is {activity}</span>
                           {elapsed && <span className="wl-clock">· {elapsed}</span>}
                         </span>
@@ -1563,48 +1847,24 @@ export function App() {
                   {composer}
                   {statusMsg && <div className="status-line">{statusMsg}</div>}
                 </div>
-                <div className="foot">{activeBot} keeps working while you're away</div>
+                <div className="foot">{botLabel(activeBot)} keeps working while you're away</div>
               </>
             )}
           </>
         )}
       </div>
 
-      {modal && (
-        <div className="modal-veil" onClick={() => !creating && setModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>New bot</h3>
-            <p>Describe what this bot should do. The name is chosen for you and can be changed later.</p>
-            <label>What should it do?
-              <textarea
-                autoFocus
-                rows={3}
-                value={modal.text}
-                onChange={(e) => setModal({ ...modal, text: e.target.value })}
-                placeholder="e.g. Review my code in plain language"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createBot(modal.text); } }}
-              />
-            </label>
-            <div className="hint">Leave it empty for a general-purpose assistant.</div>
-            {modal.err && <div className="err">{modal.err}</div>}
-            <div className="row">
-              <button className="btn-ghost" onClick={() => setModal(null)} disabled={creating}>Cancel</button>
-              <button className="btn-primary" onClick={() => createBot(modal.text)} disabled={creating}>
-                {creating ? "Creating…" : "Create and chat"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {settingsBot && (
         <ErrorBoundary key={settingsBot} label="bot settings" onClose={() => setSettingsBot(null)}>
           <BotSettings
             botId={settingsBot}
+            displayName={botNames[settingsBot] ?? ""}
             models={models.map((m) => m.key)}
+            onDisplayNameChange={(name) => setBotDisplayName(settingsBot, name)}
             onClose={() => setSettingsBot(null)}
             onChanged={() => { refreshCatalogs(); refreshSessions(); }}
             onDeleted={(id) => {
+              forgetBotLocal(id);
               if (activeBot === id) {
                 setActiveSession(null, null);
                 setMsgs([]);
@@ -1613,6 +1873,7 @@ export function App() {
               }
             }}
             onRenamed={(from, to) => {
+              migrateBotLocal(from, to);
               if (activeBot === from) setActiveBot(to);
               refreshSessions();
             }}
@@ -1623,16 +1884,6 @@ export function App() {
       {toolsOpen && (
         <ErrorBoundary key="tools" label="tools" onClose={() => setToolsOpen(false)}>
           <Tools onClose={() => setToolsOpen(false)} onChanged={() => { refreshCatalogs(); }} />
-        </ErrorBoundary>
-      )}
-
-      {settingsOpen && (
-        <ErrorBoundary key="settings" label="settings" onClose={() => setSettingsOpen(false)}>
-          <Settings
-            appearance={appearance}
-            onChange={setAppearance}
-            onClose={() => setSettingsOpen(false)}
-          />
         </ErrorBoundary>
       )}
 

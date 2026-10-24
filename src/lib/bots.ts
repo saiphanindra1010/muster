@@ -328,8 +328,8 @@ export async function saveBot(
   // Project agent discovery runs async after load - poll until visible.
   // Disabled bots never appear in /api/agent; for them the write itself
   // (readable with disabled:true) is the success condition.
-  for (let i = 0; i < 15; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, i === 0 ? 120 : 250));
     if (d.disabled) {
       const src = await readBotFile(slug);
       if (src != null && parseBotFile(src).known.disabled === true) return slug;
@@ -391,6 +391,14 @@ const NAME_STOPWORDS = new Set([
   "would", "do", "does", "please", "bot", "assistant", "always", "when",
   "then", "also", "about", "answer", "answers", "answering", "question",
   "questions", "things", "stuff", "just", "only", "some", "new", "really", "very",
+  // Greetings are not tasks - a first "hi" must never rename a bot.
+  "hi", "hello", "hey", "yo", "sup", "hiya", "morning", "afternoon", "evening",
+  "thanks", "thank", "thx", "ok", "okay", "cool", "nice", "test", "testing",
+  // Vague words that made names like "There Helper" or "Yet Helper".
+  "there", "here", "anyone", "anybody", "everyone", "everybody", "someone",
+  "somebody", "nobody", "something", "anything", "nothing", "yet", "still",
+  "again", "now", "today", "tonight", "tomorrow", "later", "soon", "maybe",
+  "perhaps", "kindly", "able", "trying", "try", "let", "lets",
 ]);
 
 /**
@@ -415,6 +423,160 @@ export function deriveBotName(text: string, taken: Set<string>): string {
   let name = base;
   for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
   return name;
+}
+
+const ACRONYMS: Record<string, string> = {
+  ai: "AI", api: "API", mcp: "MCP", pr: "PR", seo: "SEO", sql: "SQL",
+  ui: "UI", ux: "UX", url: "URL", crm: "CRM", pdf: "PDF",
+};
+
+/** Title-case a bot handle for display ("pr-agent" -> "PR Agent"). */
+export function prettyBotName(id: string): string {
+  if (!id) return "";
+  const untitled = id.match(/^untitled(?:-(\d+))?$/);
+  if (untitled) return untitled[1] ? `Untitled ${untitled[1]}` : "Untitled";
+  return id
+    .split(/[/-]+/)
+    .filter(Boolean)
+    .map((w) => ACRONYMS[w.toLowerCase()] ?? w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Domain names are curated: a familiar task should read like a teammate. */
+const NAME_DOMAINS: Array<[RegExp, string]> = [
+  [/\b(debug|bug|crash|exception|stack ?trace)\w*/, "Bug Fixer"],
+  [/\b(trip|travel|flight|hotel|vacation|holiday|itinerar|tour|visa|goa)\w*/, "Trip Planner"],
+  [/\b(movie|film|cinema|netflix|anime|watchlist|tv series)\w*/, "Movie Scout"],
+  [/\b(expense|budget|tax|invoice|receipt|finance|spend|accounting)\w*/, "Expense Tracker"],
+  [/\b(research|paper|study|course|exam|learn|thesis)\w*/, "Research Partner"],
+  [/\b(email|inbox|newsletter|outreach)\w*/, "Email Writer"],
+  [/\b(blog|article|essay|copywriting|content|draft)\w*/, "Writing Partner"],
+  [/\b(code|coding|program|refactor|react|python|javascript|typescript|api|repo|github|software)\w*/, "Code Reviewer"],
+  [/\b(design|logo|brand|figma|ui|ux)\w*/, "Design Partner"],
+  [/\b(music|song|playlist|spotify|album|artist|concert)\w*/, "Music Curator"],
+  [/\b(recipe|food|cook|meal|dinner|lunch|restaurant|grocery|pizza|coffee)\w*/, "Recipe Finder"],
+  [/\b(job|resume|cv|interview|career|hiring)\w*/, "Career Coach"],
+  [/\b(tweet|twitter|social|instagram|thread)\w*/, "Social Writer"],
+  [/\b(seo|keyword|backlink|ranking)\w*/, "SEO Strategist"],
+  [/\b(data|spreadsheet|analytics|dashboard|chart|sql)\w*/, "Data Analyst"],
+  [/\b(calendar|schedule|meeting|reminder|appointment)\w*/, "Schedule Keeper"],
+  [/\b(shop|price|deal|product|compare|gift)\w*/, "Shopping Scout"],
+  [/\b(apartment|house|rent|property|real estate)\w*/, "Home Scout"],
+  [/\b(workout|fitness|gym|health|diet|sleep|habit)\w*/, "Health Coach"],
+  [/\b(stock|crypto|invest|portfolio|market)\w*/, "Market Watcher"],
+  [/\b(photo|image|picture|video|thumbnail)\w*/, "Media Maker"],
+  [/\b(slide|deck|presentation|pitch)\w*/, "Deck Builder"],
+];
+
+/** Fallback roles when the task is unfamiliar but the verb is clear. */
+const NAME_ROLES: Array<[RegExp, string]> = [
+  [/\b(plan|organi[sz]|coordinat|itinerar)\w*/, "Planner"],
+  [/\b(find|search|look for|discover|scout|recommend)\w*/, "Scout"],
+  [/\b(book|reserve|order|buy)\w*/, "Booker"],
+  [/\b(research|investigat|explore)\w*/, "Researcher"],
+  [/\b(review|audit|inspect|check)\w*/, "Reviewer"],
+  [/\b(summariz|summaris|condense)\w*/, "Summarizer"],
+  [/\b(write|draft|compose)\w*/, "Writer"],
+  [/\b(design|build|create|make)\w*/, "Maker"],
+  [/\b(track|manage|monitor|watch)\w*/, "Tracker"],
+  [/\b(analy[sz])\w*/, "Analyst"],
+  [/\b(translat)\w*/, "Translator"],
+  [/\b(debug)\w*/, "Debugger"],
+  [/\b(draw|illustrat|sketch|paint)\w*/, "Illustrator"],
+  [/\b(clean|tidy|declutter)\w*/, "Organizer"],
+  [/\b(call|contact|reach out)\w*/, "Outreach"],
+  [/\b(teach|tutor|explain)\w*/, "Tutor"],
+];
+
+/** Adjectives do not name the work - "good movie" is about the movie. */
+const NAME_ADJECTIVES = new Set([
+  "good", "great", "best", "cool", "nice", "cheap", "quick", "simple", "easy",
+  "random", "interesting", "small", "big", "new", "fun", "funny", "amazing",
+  "perfect", "top", "local", "nearby", "affordable", "fast", "weekly", "daily",
+  "personal", "professional", "cold", "warm", "short", "long", "first", "next",
+  "last", "favorite", "favourite", "ideal", "useful", "helpful",
+]);
+
+/** Nouns too vague to lead a name ("movie place" is about movies). */
+const NAME_GENERIC_HEADS = new Set([
+  "thing", "things", "stuff", "task", "tasks", "item", "items", "work",
+  "place", "places", "site", "sites", "page", "pages", "app", "apps",
+  "tool", "tools", "system", "systems", "project", "projects", "file", "files",
+  "list", "lists", "info", "information", "details", "idea", "ideas",
+]);
+
+const TITLE_ACRONYMS: Record<string, string> = {
+  ...ACRONYMS, api: "API", cv: "CV", seo: "SEO", sql: "SQL", tv: "TV", ui: "UI", ux: "UX",
+};
+
+function titleCase(s: string): string {
+  return s
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => TITLE_ACRONYMS[w] ?? w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Cheap singularizer for name-shaped nouns: expenses -> expense. */
+function singularize(w: string): string {
+  if (w === "taxes") return "tax";
+  if (w.length > 3 && w.endsWith("ies")) return `${w.slice(0, -3)}y`;
+  if (w.length > 3 && w.endsWith("ses")) return w.slice(0, -2);
+  if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) return w.slice(0, -1);
+  return w;
+}
+
+/** The one noun the task is really about, after filler is stripped. */
+function pickNameObject(words: string[]): string {
+  const meaningful = words.filter(
+    (w) =>
+      !NAME_STOPWORDS.has(w) &&
+      !NAME_ADJECTIVES.has(w) &&
+      !NAME_GENERIC_HEADS.has(w) &&
+      !NAME_ROLES.some(([re]) => re.test(w)) &&
+      !/^\d+$/.test(w),
+  );
+  for (let i = meaningful.length - 1; i >= 0; i--) {
+    const w = meaningful[i];
+    if (w.length >= 3) return singularize(w);
+  }
+  return "";
+}
+
+/**
+ * A friendly name for an untitled bot picked from its first real task.
+ * Returns null for greetings / empty chatter so "hi there" never becomes a
+ * bot name. The handle stays stable - this is a display title only.
+ *
+ * Naming is intent-first: a familiar domain (trips, code, email, money...)
+ * gets a hand-written team name, otherwise the task's verb and object are
+ * combined ("Book a table" -> "Table Booker"). This beats grabbing the first
+ * two words, which produced names like "Find Good".
+ */
+export function deriveBotTitle(text: string): string | null {
+  const raw = text.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
+  if (!raw) return null;
+  const words = raw.split(" ").filter(Boolean);
+  // Greetings and acknowledgements are not tasks.
+  if (!words.some((w) => !NAME_STOPWORDS.has(w))) return null;
+
+  // Summaries deserve the object in the name: "Article Summarizer".
+  if (/\b(summariz|summaris|condense)\w*/.test(raw)) {
+    const object = pickNameObject(words);
+    return titleCase(object ? `${object} Summarizer` : "Summarizer");
+  }
+
+  for (const [re, name] of NAME_DOMAINS) {
+    if (re.test(raw)) return name;
+  }
+
+  const role = NAME_ROLES.find(([re]) => re.test(raw))?.[1] ?? "";
+  const object = pickNameObject(words);
+  if (object && role) return titleCase(`${object} ${role}`);
+  if (role) return titleCase(role);
+  // No recognizable verb and no domain match: stay Untitled. A vague first
+  // message should never produce a vague name.
+  return null;
 }
 
 /** Marker identifying the built-in colleague persona (never upgrade twice). */
@@ -446,6 +608,20 @@ const PERSONA_BROWSER_RULES = `${PERSONA_BROWSER_HEAD}
 /** Marker used by the persona migration so the browser rules patch once. */
 const PERSONA_BROWSER_MARKER = "the `agent-browser` connector is the only browser";
 
+/** Voice rules (persona v5): short, answer-first, no narration. */
+const PERSONA_VOICE_MARKER = "How you talk:";
+const PERSONA_VOICE_RULES = `${PERSONA_VOICE_MARKER}
+- Lead with the answer or result. Never open with "Sure", "Let me", "I'll", "Great question" or a restatement of the request.
+- Keep it short by default: one to three sentences, or a tight list for steps. Go longer only when the task really needs it.
+- Never use em dashes or en dashes. Use a period, comma, colon or parentheses instead.
+- Don't narrate tool calls, plans or thinking. Use your tools quietly and report only what matters.
+- Sound like a sharp, friendly teammate: warm, direct, lightly playful. Never corporate, never sycophantic.
+- No filler sign-offs ("Let me know if you need anything else") unless there is a real next step.
+- If you are blocked, say what happened and what you need in one line.`;
+
+/** Existing bots get this line added even if they already have the voice rules. */
+const PERSONA_NO_DASH = "- Never use em dashes or en dashes. Use a period, comma, colon or parentheses instead.";
+
 /**
  * The colleague persona every bot gets. A non-empty agent body replaces
  * OpenCode's base prompt - which is the point: bots introduce themselves as
@@ -460,10 +636,10 @@ How you work:
 - You are a teammate, not software. Never describe yourself as an AI assistant, a model, or as OpenCode. OpenCode is the private engine that executes your operations in the background - the user never needs to hear about it. If asked who you are: you are ${name}, one of their bots.
 - Do the work instead of describing it. Use your tools, complete the steps, then give a short, concrete update.
 - Act on your own within your focus; ask before anything destructive or irreversible.
-- Report like a colleague: "Done - …, next I can …". Brief and specific; never restate the request back.
 - If the user asks you to remember something permanently, save it as a skill in your workspace.
 ${PERSONA_BROWSER_RULES}
 ${PERSONA_STALE_NOTE_RULE}
+${PERSONA_VOICE_RULES}
 - Match the user's language and tone.`;
 }
 
@@ -487,6 +663,17 @@ function upgradedSystem(name: string, body: string): string | null {
       } else {
         next = next.replace(last, `${PERSONA_BROWSER_RULES}\n${last}`);
       }
+      changed = true;
+    }
+    if (!next.includes(PERSONA_VOICE_MARKER)) {
+      // The old persona asked bots to report like a colleague - that line is
+      // what produced "Done - ...! Next I can ..." filler. Replace it.
+      next = next.replace(/\n- Report like a colleague:[^\n]*/g, "");
+      next = next.replace(last, `${PERSONA_VOICE_RULES}\n${last}`);
+      changed = true;
+    } else if (!next.includes("Never use em dashes")) {
+      // Voice rules already shipped without the dash rule - add just that.
+      next = next.replace(PERSONA_VOICE_MARKER, `${PERSONA_VOICE_MARKER}\n${PERSONA_NO_DASH}`);
       changed = true;
     }
     return changed ? next : null;
@@ -530,6 +717,30 @@ export async function createBotFromPrompt(text: string): Promise<string> {
       model: "",
       color: "",
       system,
+      disabled: false,
+      skills: [],
+      mcp: {},
+    },
+    [],
+    [],
+  );
+}
+
+/**
+ * One-click bot: no form, no system prompt. The bot opens as "Untitled" and
+ * learns what it is from the first task (the UI names it after that task).
+ */
+export async function createUntitledBot(taken: Set<string>): Promise<string> {
+  let name = "untitled";
+  for (let n = 2; taken.has(name); n++) name = `untitled-${n}`;
+  return saveBot(
+    {
+      name,
+      description: "Ready for a task.",
+      mode: "primary",
+      model: "",
+      color: "",
+      system: buildBotPersona(name, "whatever the user needs next - learn the job from their first task"),
       disabled: false,
       skills: [],
       mcp: {},

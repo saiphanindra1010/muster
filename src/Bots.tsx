@@ -7,6 +7,7 @@ import {
   mcpStatusLabel,
   normServer,
   parseBotFile,
+  prettyBotName,
   readBotFile,
   renameBotHistory,
   saveBot,
@@ -15,6 +16,7 @@ import {
   type BotDraft,
   type PermRule,
 } from "./lib/bots";
+import { BotAvatar, TILE_COLORS } from "./avatar";
 import { IconBan, IconSave, IconTrash, IconX } from "./icons";
 import { workspaceDir } from "./lib/opencode";
 import { useEscape } from "./lib/useEscape";
@@ -23,15 +25,18 @@ import { useEscape } from "./lib/useEscape";
  * Bot settings drawer: edit one bot (system prompt, skills, MCP, advanced).
  * Rendered as a right-side overlay from the sidebar gear icon.
  */
-export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRenamed }: {
+export function BotSettings({ botId, displayName: displayNameProp, models, onClose, onChanged, onDeleted, onRenamed, onDisplayNameChange }: {
   botId: string;
+  displayName?: string;
   models: string[];
   onClose: () => void;
   onChanged: () => void;
   onDeleted: (botId: string) => void;
   onRenamed?: (from: string, to: string) => void;
+  onDisplayNameChange?: (name: string) => void;
 }) {
   const [draft, setDraft] = useState<BotDraft | null>(null);
+  const [displayName, setDisplayName] = useState(displayNameProp ?? "");
   const [unknown, setUnknown] = useState<string[]>([]);
   const [rules, setRules] = useState<PermRule[]>([]);
   const [allSkills, setAllSkills] = useState<SkillInfo[]>([]);
@@ -82,6 +87,7 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
     try {
       setStatus("Saving…");
       await saveBot(draft, unknown, rules, botId);
+      onDisplayNameChange?.(displayName.trim());
       if (target !== botId) {
         await renameBotHistory(botId, target);
         onRenamed?.(botId, target);
@@ -131,25 +137,50 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
       <div className="drawer-veil" onClick={onClose} />
       <div className="drawer">
         <div className="drawer-head">
-          <b>{botId} settings</b>
+          <b>Bot profile</b>
           <button className="icon-btn" onClick={onClose} title="Close"><IconX size={16} /></button>
         </div>
         <div className="drawer-body">
           {status && <div className="hint">{status}</div>}
+          <div className="bot-profile">
+            <BotAvatar seed={botId} color={draft?.color || undefined} size={88} />
+            <div className="bot-profile-copy">
+              <div className="bot-profile-name">{displayName.trim() || prettyBotName(botId)}</div>
+              <div className="bot-profile-handle">@{botId}</div>
+            </div>
+          </div>
           {draft && (
             <>
-              <label>Name
-                <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="coach" />
+              <label>Display name
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder={prettyBotName(botId)}
+                  maxLength={40}
+                />
               </label>
-              {draft.name !== botId && (
-                <div className="hint">Renaming keeps this bot's chat history. You can also keep the current name.</div>
-              )}
+              <div className="hint">Only changes how this bot is labelled for you.</div>
               <label>What this bot is for
                 <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Reviews my code and explains it" />
               </label>
-              <label>System prompt
-                <textarea rows={7} value={draft.system} onChange={(e) => setDraft({ ...draft, system: e.target.value })} placeholder="You are an experienced coach. Keep answers short and practical." />
-              </label>
+              <div className="bot-section">
+                <strong>Accent</strong>
+                <div className="swatches" role="group" aria-label="Avatar tile color">
+                  {TILE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`swatch${draft.color.toLowerCase() === c ? " on" : ""}`}
+                      style={{ background: c }}
+                      onClick={() => setDraft({ ...draft, color: c })}
+                      title={c}
+                      aria-label={`Avatar color ${c}`}
+                      aria-pressed={draft.color.toLowerCase() === c}
+                    />
+                  ))}
+                </div>
+                <div className="hint">Sets the avatar tile color.</div>
+              </div>
               <div className="bot-section">
                 <strong>Skills</strong>
                 {draft.skills.length === 0 ? (
@@ -230,14 +261,20 @@ export function BotSettings({ botId, models, onClose, onChanged, onDeleted, onRe
               <details>
                 <summary>Advanced</summary>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+                  <label>Handle
+                    <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="coach" />
+                  </label>
+                  {draft.name !== botId && (
+                    <div className="hint">Renaming keeps this bot's chat history. You can also keep the current name.</div>
+                  )}
                   <label>Model
                     <select value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })}>
                       <option value="">Automatic</option>
                       {models.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
                     </select>
                   </label>
-                  <label>Accent color
-                    <input type="color" value={draft.color || "#5b8cff"} onChange={(e) => setDraft({ ...draft, color: e.target.value })} />
+                  <label>System prompt
+                    <textarea rows={7} value={draft.system} onChange={(e) => setDraft({ ...draft, system: e.target.value })} placeholder="You are an experienced coach. Keep answers short and practical." />
                   </label>
                   {unknown.length > 0 && <div className="hint">Kept unchanged: <code>{unknown.join(" · ")}</code></div>}
                 </div>
