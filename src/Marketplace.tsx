@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   catalog,
   customPluginItem,
@@ -11,22 +11,32 @@ import {
   type MarketKind,
   type MarketState,
 } from "./lib/marketplace";
+import { IconBook, IconPackage, IconSearch, IconWrench, IconX } from "./icons";
 import {
-  CONNECTOR_ICONS,
-  IconBook,
-  IconExternal,
-  IconPackage,
-  IconPlus,
-  IconRefresh,
-  IconSearch,
-  IconStore,
-  IconWrench,
-  IconX,
-} from "./icons";
-import { connectMcpServer } from "./lib/bots";
+  beginMcpSignIn,
+  completeMcpSignIn,
+  connectMcpServer,
+  holdSignInTab,
+  waitForMcpSignIn,
+} from "./lib/bots";
+import { AppLogo } from "./logos";
 import { useEscape } from "./lib/useEscape";
 
-const KIND_LABEL: Record<MarketKind, string> = { mcp: "Connector", plugin: "Plugin", skill: "Skill" };
+/** The apps a person recognizes. Everything else stays under More. */
+const APP_IDS = ["agent-browser", "github", "slack", "gmail", "google-chat", "teams", "discord", "sentry"];
+
+const APP_NAME: Record<string, string> = { "agent-browser": "Browser" };
+
+const APP_BLURB: Record<string, string> = {
+  "agent-browser": "Opens a real Chrome window. Sign in once, and it remembers.",
+  github: "Issues, pull requests, and code.",
+  slack: "Read channels and reply.",
+  gmail: "Read mail and draft replies.",
+  "google-chat": "Read spaces and send messages.",
+  teams: "Read chats and send messages.",
+  discord: "Read channels and send messages.",
+  sentry: "Look up errors and stack traces.",
+};
 
 /** Stop the install poll after this many tries (~10 min at 4s per tick). */
 const INSTALL_POLL_MAX = 150;
@@ -63,13 +73,15 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
   const items = useMemo(() => catalog(), []);
   const [cfg, setCfg] = useState<ConfigView | null>(null);
   const [state, setState] = useState<MarketState | null>(null);
-  const [tab, setTab] = useState<"all" | MarketKind>("all");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
   const [fieldVals, setFieldVals] = useState<Record<string, Record<string, string>>>({});
   const [custom, setCustom] = useState("");
+  const [askId, setAskId] = useState<string | null>(null);
+  const [codeAsk, setCodeAsk] = useState<{ itemId: string; integrationID: string; attemptID: string; hint: string } | null>(null);
+  const [code, setCode] = useState("");
 
   useEscape(onClose);
 
@@ -154,187 +166,204 @@ export function Marketplace({ onClose, onChanged }: { onClose: () => void; onCha
     return [...items, ...extra];
   }, [items, cfg, state]);
 
-  const visible = all.filter((i) => {
-    if (tab !== "all" && i.kind !== tab) return false;
-    const hay = `${i.name} ${i.description} ${(i.tags ?? []).join(" ")} ${i.id}`.toLowerCase();
+  const matches = (i: MarketItem) => {
+    const hay = `${APP_NAME[i.id] ?? i.name} ${APP_BLURB[i.id] ?? i.description} ${(i.tags ?? []).join(" ")}`.toLowerCase();
     return !q.trim() || hay.includes(q.trim().toLowerCase());
-  });
+  };
+  const byId = new Map(all.map((i) => [i.id, i]));
+  const apps = APP_IDS.map((id) => byId.get(id)).filter((i): i is MarketItem => !!i && matches(i));
+  const skills = all.filter((i) => i.kind === "skill" && matches(i));
+  const more = all.filter((i) => i.kind !== "skill" && !APP_IDS.includes(i.id) && matches(i));
 
-  const Card = ({ item }: { item: MarketItem }) => {
+  const Tile = ({ item }: { item: MarketItem }) => {
     const inst = !!cfg && !!state && isInstalled(cfg, state, item);
     const mcpSt = item.kind === "mcp" ? state?.mcp.get(item.id) : undefined;
-    const pkg = item.plugin?.package;
-    const pluginSt = pkg ? state?.plugins.get(pkg) : undefined;
+    const pluginSt = item.plugin ? state?.plugins.get(item.plugin.package) : undefined;
+    const pluginBusy = item.kind === "plugin" && inst && pluginSt?.status !== "active";
     const isBusy = busy === item.id;
     const fields = item.mcp?.fields ?? [];
-    const Ico = item.icon ? CONNECTOR_ICONS[item.icon] : undefined;
+    const asking = askId === item.id;
     const missing = fields.some((_, i) => !(fieldVals[item.id]?.[String(i)] ?? "").trim());
+    const needsSignIn = !!mcpSt?.integrationID && (mcpSt.status === "needs_auth" || mcpSt.status === "needs_auth_manual");
+    const signIn = () => {
+      const integrationID = mcpSt?.integrationID;
+      if (!integrationID) return;
+      const tab = holdSignInTab();
+      run(item.id, async () => {
+        let opened = false;
+        try {
+          const attempt = await beginMcpSignIn(integrationID);
+          tab.go(attempt.url);
+          opened = true;
+          if (attempt.mode === "code") {
+            setCodeAsk({
+              itemId: item.id,
+              integrationID,
+              attemptID: attempt.attemptID,
+              hint: attempt.instructions || "Paste the code from the sign-in page.",
+            });
+            setCode("");
+            return;
+          }
+          await waitForMcpSignIn(integrationID, attempt.attemptID);
+          await connectMcpServer(item.id);
+        } catch (e) {
+          if (!opened) tab.close();
+          throw e;
+        }
+      });
+    };
+    const branded = APP_IDS.includes(item.id);
+    const add = () => {
+      if (fields.length && !asking) {
+        setAskId(item.id);
+        return;
+      }
+      if (missing) return;
+      run(item.id, () => installItem(item, fieldVals[item.id]));
+    };
     return (
-      <div className="mkt-card">
-        <div className="mkt-head">
-          <span className={`mkt-ic ${item.kind}`}>
-            {Ico ? <Ico size={15} /> : <KindIcon kind={item.kind} />}
-          </span>
-          <span className="mkt-title">
-            <strong>{item.name}</strong>
-            <span className="mkt-kind">{KIND_LABEL[item.kind]}</span>
-            {item.homepage && (
-              <a
-                className="mkt-link"
-                href={item.homepage}
-                target="_blank"
-                rel="noreferrer"
-                title="Homepage"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <IconExternal size={12} />
-              </a>
-            )}
-          </span>
-          <span className="mkt-actions">
+      <div className="mkt-app">
+        <span className="mkt-logo">{branded ? <AppLogo id={item.id} size={26} /> : <KindIcon kind={item.kind} size={18} />}</span>
+        <span className="mkt-copy">
+          <span className="mkt-name">
+            <strong>{APP_NAME[item.id] ?? item.name}</strong>
             {inst ? (
-              <>
-                {item.kind === "mcp" && <McpChip st={mcpSt} />}
-                {item.kind === "plugin" && (
-                  <span className={`mkt-chip ${pluginSt?.status === "active" ? "ok" : "warn"}`}>
-                    {pluginSt?.status === "active"
-                      ? `Active${pluginSt.version ? ` · ${pluginSt.version}` : ""}`
-                      : "Installing…"}
-                  </span>
-                )}
-                {item.kind === "skill" && <span className="mkt-chip ok">Installed</span>}
-                {item.mcp?.signin && (mcpSt?.status === "needs_auth" || mcpSt?.status === "needs_auth_manual") && (
-                  <button
-                    className="mkt-btn primary"
-                    onClick={() => run(item.id, () => connectMcpServer(item.id))}
-                    disabled={!!busy}
-                  >
-                    {isBusy ? <IconRefresh size={13} className="spin" /> : null} Sign in
+              <span className="mkt-actions">
+                {needsSignIn && (
+                  <button className="mkt-btn primary" onClick={signIn} disabled={!!busy}>
+                    {isBusy ? "Waiting…" : "Sign in"}
                   </button>
                 )}
                 <button
-                  className="mkt-btn"
+                  className={`mkt-btn${confirm === item.id || pluginBusy || needsSignIn ? "" : " done"}`}
                   onClick={() => {
-                    if (confirm !== item.id) {
-                      setConfirm(item.id);
-                      return;
-                    }
+                    if (confirm !== item.id) { setConfirm(item.id); return; }
                     setConfirm(null);
                     run(item.id, () => uninstallItem(item));
                   }}
                   onBlur={() => setConfirm(null)}
                   disabled={!!busy}
                 >
-                  {confirm === item.id ? "Confirm remove" : "Remove"}
+                  {confirm === item.id ? "Remove?" : pluginBusy ? "Adding…" : needsSignIn ? "Remove" : "Added"}
                 </button>
-              </>
+              </span>
             ) : (
-              <button
-                className="mkt-btn primary"
-                onClick={() => run(item.id, () => installItem(item, fieldVals[item.id]))}
-                disabled={!!busy || missing}
-                title={missing ? `${fields[0]?.label ?? "Field"} required` : undefined}
-              >
-                {isBusy ? <IconRefresh size={13} className="spin" /> : <IconPlus size={13} />} Install
+              <button className="mkt-btn primary" onClick={add} disabled={!!busy || (asking && missing)}>
+                {isBusy ? "Adding…" : asking ? "Connect" : "Add"}
               </button>
             )}
           </span>
-        </div>
-        <p className="mkt-desc">{item.description}</p>
-        {!inst &&
-          fields.map((f, i) => (
-            <Fragment key={f.label}>
-              <label className="mkt-token">
-                <span>{f.label}</span>
-                <input
-                  type="password"
-                  value={fieldVals[item.id]?.[String(i)] ?? ""}
-                  placeholder={f.placeholder ?? ""}
-                  onChange={(e) =>
-                    setFieldVals({
-                      ...fieldVals,
-                      [item.id]: { ...fieldVals[item.id], [String(i)]: e.target.value },
-                    })
-                  }
-                />
-              </label>
-              {f.help && <div className="mkt-note">{f.help}</div>}
-            </Fragment>
-          ))}
-        {!inst && item.mcp?.note && <div className="mkt-note">{item.mcp.note}</div>}
-        {(item.requires?.length ?? 0) > 0 && !inst && <div className="mkt-note">Requires {item.requires!.join(", ")}</div>}
-        {(item.tags?.length ?? 0) > 0 && (
-          <div className="mkt-foot">
-            {item.tags!.map((t) => (
-              <span key={t} className="mkt-tag">
-                {t}
-              </span>
-            ))}
-          </div>
+          <span className="mkt-blurb">{APP_BLURB[item.id] ?? item.description}</span>
+          {item.kind === "mcp" && mcpSt && mcpSt.status !== "connected" && <McpChip st={mcpSt} />}
+        </span>
+        {codeAsk?.itemId === item.id && (
+          <label className="mkt-token">
+            <span>{codeAsk.hint}</span>
+            <input
+              value={code}
+              autoFocus
+              placeholder="Paste the code"
+              aria-label="Sign-in code"
+              onChange={(e) => setCode(e.target.value)}
+            />
+            <button
+              className="mkt-btn primary"
+              disabled={!!busy || !code.trim()}
+              onClick={() => run(item.id, async () => {
+                await completeMcpSignIn(codeAsk.integrationID, codeAsk.attemptID, code);
+                await connectMcpServer(item.id);
+                setCodeAsk(null);
+                setCode("");
+              })}
+            >
+              Confirm
+            </button>
+          </label>
         )}
+        {asking && !inst && fields.map((f, i) => (
+          <label key={f.label} className="mkt-token">
+            <span>{f.label}</span>
+            <input
+              type="password"
+              autoFocus={i === 0}
+              value={fieldVals[item.id]?.[String(i)] ?? ""}
+              placeholder={f.placeholder ?? ""}
+              aria-label={f.label}
+              onChange={(e) => setFieldVals({
+                ...fieldVals,
+                [item.id]: { ...fieldVals[item.id], [String(i)]: e.target.value },
+              })}
+            />
+          </label>
+        ))}
       </div>
     );
   };
 
   return (
     <div className="modal-veil" onClick={onClose}>
-      <div className="modal" style={{ width: "min(680px, 100%)" }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal market" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="mkt-hero">
-            <IconStore size={15} />
-          </span>
-          <h3 style={{ margin: 0, flex: 1 }}>Marketplace</h3>
+          <h3 style={{ margin: 0, flex: 1 }}>Apps</h3>
           <button className="icon-btn" onClick={onClose} title="Close">
             <IconX size={16} />
           </button>
         </div>
-        <p className="mkt-sub">
-          Connectors, plugins and skills for your bots. One click to install. Everything is stored in your workspace.
-        </p>
+        <p className="mkt-sub">Add an app. Your bots can use it right away.</p>
         <div className="mkt-bar">
           <span className="mkt-search">
             <IconSearch size={14} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" />
-          </span>
-          <span className="mkt-tabs">
-            {(["all", "mcp", "plugin", "skill"] as const).map((k) => (
-              <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
-                {k === "all" ? "All" : KIND_LABEL[k]}
-              </button>
-            ))}
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps" aria-label="Search apps" />
           </span>
         </div>
-        <div className="mkt-grid">
+        <div className="mkt-scroll">
           {!cfg && <div className="hint">Loading…</div>}
-          {cfg && visible.map((i) => <Card key={`${i.kind}:${i.id}`} item={i} />)}
-          {cfg && visible.length === 0 && <div className="hint">No matches.</div>}
-          {cfg && tab !== "skill" && tab !== "mcp" && (
-            <div className="mkt-custom">
-              <span className="mkt-note" style={{ flex: 1 }}>
-                Install any npm plugin by name
-              </span>
-              <input
-                value={custom}
-                onChange={(e) => setCustom(e.target.value)}
-                placeholder="npm package name"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && custom.trim()) {
+          {cfg && apps.length > 0 && (
+            <div className="mkt-apps">
+              {apps.map((i) => <Tile key={i.id} item={i} />)}
+            </div>
+          )}
+          {cfg && skills.length > 0 && (
+            <div className="mkt-section">
+              <h4>Skills</h4>
+              <div className="mkt-apps">
+                {skills.map((i) => <Tile key={i.id} item={i} />)}
+              </div>
+            </div>
+          )}
+          {cfg && apps.length === 0 && skills.length === 0 && more.length === 0 && <div className="hint">No matches.</div>}
+          {cfg && (more.length > 0 || !q.trim()) && (
+            <details className="mkt-more">
+              <summary>More</summary>
+              <div className="mkt-apps">
+                {more.map((i) => <Tile key={`${i.kind}:${i.id}`} item={i} />)}
+              </div>
+              <div className="mkt-custom">
+                <input
+                  value={custom}
+                  onChange={(e) => setCustom(e.target.value)}
+                  placeholder="Add a package by name"
+                  aria-label="Package name"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && custom.trim()) {
+                      run(custom.trim(), () => installItem(customPluginItem(custom.trim())));
+                      setCustom("");
+                    }
+                  }}
+                />
+                <button
+                  className="mkt-btn primary"
+                  disabled={!!busy || !custom.trim()}
+                  onClick={() => {
                     run(custom.trim(), () => installItem(customPluginItem(custom.trim())));
                     setCustom("");
-                  }
-                }}
-              />
-              <button
-                className="mkt-btn"
-                disabled={!!busy || !custom.trim()}
-                onClick={() => {
-                  run(custom.trim(), () => installItem(customPluginItem(custom.trim())));
-                  setCustom("");
-                }}
-              >
-                Add
-              </button>
-            </div>
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+            </details>
           )}
         </div>
         {err && <div className="err">{err}</div>}

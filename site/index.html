@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Muster</title>
+  <meta name="description" content="Muster is a desktop app for a small team of bots. Name one, give it a task, and it keeps working while you are away." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='116' fill='%23171922'/%3E%3Ccircle cx='174' cy='174' r='62' fill='%23b6e3f4'/%3E%3Ccircle cx='338' cy='174' r='62' fill='%23c0aede'/%3E%3Ccircle cx='174' cy='338' r='62' fill='%23ffdfbf'/%3E%3Ccircle cx='338' cy='338' r='62' fill='%23ffd5dc'/%3E%3C/svg%3E" />
+  <script>
+    (function () {
+      var choice = localStorage.getItem("muster.site.theme");
+      var dark = choice === "dark" || (choice !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --sidebar: #0a0a0a;
+      --panel: #141414;
+      --panel-2: #1c1c1c;
+      --line: #2a2a2a;
+      --line-soft: #1f1f1f;
+      --txt: #f4f4f5;
+      --dim: #b4b4be;
+      --faint: #8d8d98;
+      --primary-bg: #fff;
+      --primary-fg: #000;
+      --ghost-line: #3a3a3a;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #fff;
+      --sidebar: #f7f7f8;
+      --panel: #fff;
+      --panel-2: #f3f3f4;
+      --line: #e4e4e7;
+      --line-soft: #ececef;
+      --txt: #111;
+      --dim: #3f3f46;
+      --faint: #71717a;
+      --primary-bg: #111;
+      --primary-fg: #fff;
+      --ghost-line: #d4d4d8;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--txt);
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: -0.011em;
+    }
+    a { color: inherit; }
+    .wrap { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
+    header {
+      display: flex; align-items: center; gap: 16px;
+      height: 64px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; }
+    .mark {
+      width: 28px; height: 28px; border-radius: 7px; background: #171922;
+      display: grid; place-items: center;
+    }
+    .mark svg { width: 22px; height: 22px; display: block; }
+    nav { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+    nav a { color: var(--dim); text-decoration: none; font-size: 14px; }
+    nav a:hover { color: var(--txt); }
+    .theme {
+      border: 1px solid var(--line); background: transparent; color: var(--dim);
+      border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer;
+    }
+    .theme:hover { color: var(--txt); }
+    .hero { padding: 72px 0 28px; text-align: center; }
+    h1 {
+      margin: 18px 0 12px; font-size: clamp(40px, 6vw, 68px);
+      line-height: 1.02; letter-spacing: -0.045em; font-weight: 640;
+    }
+    .lede { margin: 0 auto; max-width: 520px; color: var(--dim); font-size: 18px; }
+    .actions { display: flex; justify-content: center; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 620;
+      text-decoration: none; border: 1px solid transparent;
+    }
+    .btn-primary { background: var(--primary-bg); color: var(--primary-fg); }
+    .btn-ghost { background: transparent; color: var(--txt); border-color: var(--ghost-line); }
+    .btn:hover { filter: brightness(0.94); }
+    .stage { padding: 28px 0 20px; }
+    .frame {
+      background: var(--sidebar); border: 1px solid var(--line); border-radius: 16px;
+      box-shadow: var(--shadow); overflow: hidden; display: grid;
+      grid-template-columns: 240px 1fr; min-height: 420px; text-align: left;
+    }
+    .side { border-right: 1px solid var(--line-soft); padding: 14px 12px; }
+    .side-top { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 640; margin-bottom: 12px; }
+    .online { margin-left: auto; color: var(--faint); font-weight: 500; font-size: 12px; }
+    .online i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3ddc6a; margin-right: 5px; }
+    .newbot {
+      width: 100%; border: 0; border-radius: 9px; background: var(--primary-bg); color: var(--primary-fg);
+      padding: 8px 10px; font: inherit; font-size: 13px; font-weight: 620;
+    }
+    .label { margin: 16px 6px 8px; font-size: 11px; letter-spacing: 0.06em; color: var(--faint); }
+    .row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-radius: 8px; }
+    .row b { display: block; font-size: 13px; font-weight: 600; }
+    .row span { display: block; font-size: 12px; color: var(--faint); }
+    .face { width: 28px; height: 28px; flex: none; }
+    .main { padding: 48px 32px; display: grid; place-items: center; text-align: center; }
+    .main h2 { margin: 14px 0 6px; font-size: 28px; letter-spacing: -0.03em; }
+    .main p { margin: 0; color: var(--dim); font-size: 14px; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px auto 0; width: min(560px, 100%); }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px; text-align: left; display: flex; gap: 10px; align-items: center;
+    }
+    .card b { display: block; font-size: 13px; }
+    .card span { display: block; color: var(--faint); font-size: 12px; }
+    section { padding: 64px 0; }
+    h3 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.03em; }
+    .section-lede { margin: 0 0 22px; color: var(--dim); max-width: 460px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .feature, .platform {
+      border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+      background: var(--panel);
+    }
+    .feature p, .platform p { margin: 6px 0 0; color: var(--dim); font-size: 14px; }
+    .platforms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .platform b { font-size: 16px; }
+    .file { display: inline-block; margin-top: 12px; font-size: 12px; color: var(--faint); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    footer {
+      border-top: 1px solid var(--line-soft); padding: 22px 0 40px;
+      display: flex; justify-content: space-between; gap: 12px; color: var(--faint); font-size: 13px;
+    }
+    footer a { color: var(--dim); }
+    @media (max-width: 800px) {
+      .frame { grid-template-columns: 1fr; }
+      .side { display: none; }
+      .grid, .platforms, .cards { grid-template-columns: 1fr; }
+      .hero { padding-top: 36px; }
+      nav .hide-sm { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="#top">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 512 512"><circle cx="174" cy="174" r="62" fill="#b6e3f4"/><circle cx="338" cy="174" r="62" fill="#c0aede"/><circle cx="174" cy="338" r="62" fill="#ffdfbf"/><circle cx="338" cy="338" r="62" fill="#ffd5dc"/></svg>
+        </span>
+        Muster
+      </a>
+      <nav>
+        <a class="hide-sm" href="#how">How it works</a>
+        <a class="hide-sm" href="#platforms">Platforms</a>
+        <a href="https://github.com/saiphanindra1010/muster">GitHub</a>
+        <button class="theme" type="button" id="theme">Theme</button>
+      </nav>
+    </header>
+
+    <main class="hero" id="top">
+      <span class="mark" style="width:52px;height:52px;border-radius:12px;margin:0 auto;">
+        <svg viewBox="0 0 512 512" style="width:40px;height:40px"><circle cx="174" cy="174" r="62" fill="#b6e3f4"/><circle cx="338" cy="174" r="62" fill="#c0aede"/><circle cx="174" cy="338" r="62" fill="#ffdfbf"/><circle cx="338" cy="338" r="62" fill="#ffd5dc"/></svg>
+      </span>
+      <h1>Talk to your bots</h1>
+      <p class="lede">A small team of bots on your computer. Name one, give it a task, and it keeps working while you are away.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/saiphanindra1010/muster/releases">Get the app</a>
+        <a class="btn btn-ghost" href="#platforms">Mac, Windows, Linux</a>
+      </div>
+    </main>
+
+    <div class="stage" aria-hidden="true">
+      <div class="frame">
+        <aside class="side">
+          <div class="side-top">
+            <span class="mark"><svg viewBox="0 0 512 512"><circle cx="174" cy="174" r="62" fill="#b6e3f4"/><circle cx="338" cy="174" r="62" fill="#c0aede"/><circle cx="174" cy="338" r="62" fill="#ffdfbf"/><circle cx="338" cy="338" r="62" fill="#ffd5dc"/></svg></span>
+            Muster
+            <span class="online"><i></i>online</span>
+          </div>
+          <button class="newbot" tabindex="-1">+ New bot</button>
+          <div class="label">YOUR TEAM</div>
+          <div class="row">
+            <svg class="face" viewBox="0 0 120 120"><ellipse cx="60" cy="64" rx="50" ry="36" fill="#ec4899"/><rect x="42" y="50" width="12" height="26" rx="6" fill="#7a244c"/><rect x="66" y="50" width="12" height="26" rx="6" fill="#7a244c"/></svg>
+            <div><b>Movie Scout</b><span>Ready for a task.</span></div>
+          </div>
+          <div class="row">
+            <svg class="face" viewBox="0 0 120 120"><path fill="#a855f7" d="M36 82C16 82 10 62 26 54C22 32 46 26 58 42C68 24 98 30 98 52C116 54 114 82 92 82Z"/><rect x="42" y="48" width="12" height="22" rx="6" fill="#4c2670"/><rect x="64" y="48" width="12" height="22" rx="6" fill="#4c2670"/></svg>
+            <div><b>Code Reviewer</b><span>Ready for a task.</span></div>
+          </div>
+          <div class="row">
+            <svg class="face" viewBox="0 0 120 120"><circle cx="60" cy="62" r="46" fill="#3b82f6"/><rect x="42" y="50" width="12" height="26" rx="6" fill="#1e3a8a"/><rect x="66" y="50" width="12" height="26" rx="6" fill="#1e3a8a"/></svg>
+            <div><b>Research Partner</b><span>Ready for a task.</span></div>
+          </div>
+        </aside>
+        <div class="main">
+          <span class="mark" style="width:44px;height:44px;border-radius:10px;">
+            <svg viewBox="0 0 512 512" style="width:34px;height:34px"><circle cx="174" cy="174" r="62" fill="#b6e3f4"/><circle cx="338" cy="174" r="62" fill="#c0aede"/><circle cx="174" cy="338" r="62" fill="#ffdfbf"/><circle cx="338" cy="338" r="62" fill="#ffd5dc"/></svg>
+          </span>
+          <h2>Talk to your bots</h2>
+          <p>Pick a bot and give it a task. It keeps working while you are away.</p>
+          <div class="cards">
+            <div class="card">
+              <svg class="face" viewBox="0 0 120 120"><ellipse cx="60" cy="64" rx="50" ry="36" fill="#ec4899"/><rect x="42" y="50" width="12" height="26" rx="6" fill="#7a244c"/><rect x="66" y="50" width="12" height="26" rx="6" fill="#7a244c"/></svg>
+              <div><b>Movie Scout</b><span>Ready for a task.</span></div>
+            </div>
+            <div class="card">
+              <svg class="face" viewBox="0 0 120 120"><path fill="#a855f7" d="M36 82C16 82 10 62 26 54C22 32 46 26 58 42C68 24 98 30 98 52C116 54 114 82 92 82Z"/><rect x="42" y="48" width="12" height="22" rx="6" fill="#4c2670"/><rect x="64" y="48" width="12" height="22" rx="6" fill="#4c2670"/></svg>
+              <div><b>Code Reviewer</b><span>Ready for a task.</span></div>
+            </div>
+            <div class="card">
+              <svg class="face" viewBox="0 0 120 120"><circle cx="60" cy="62" r="46" fill="#3b82f6"/><rect x="42" y="50" width="12" height="26" rx="6" fill="#1e3a8a"/><rect x="66" y="50" width="12" height="26" rx="6" fill="#1e3a8a"/></svg>
+              <div><b>Research Partner</b><span>Ready for a task.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section id="how">
+      <h3>A colleague, not a new chat box</h3>
+      <p class="section-lede">Each bot has a name, a face, and its own conversation. You pick who does the work.</p>
+      <div class="grid">
+        <article class="feature">
+          <b>Name it first</b>
+          <p>New bot asks for a name and a face. Nothing is created until you press Create.</p>
+        </article>
+        <article class="feature">
+          <b>It stays on the job</b>
+          <p>A bot keeps working in the background. Come back to the reply when you are ready.</p>
+        </article>
+        <article class="feature">
+          <b>Light and dark</b>
+          <p>Follow the system, or pin Light or Dark. The choice is remembered on this computer.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="platforms">
+      <h3>Install it like any other app</h3>
+      <p class="section-lede">One installer per system. The engine ships inside the app, so there is nothing else to set up.</p>
+      <div class="platforms">
+        <article class="platform">
+          <b>Mac</b>
+          <p>Open the disk image and drag Muster to Applications.</p>
+          <span class="file">Muster.dmg</span>
+        </article>
+        <article class="platform">
+          <b>Windows</b>
+          <p>Run the setup wizard. It adds a Start menu shortcut and an uninstaller.</p>
+          <span class="file">Muster-setup.exe</span>
+        </article>
+        <article class="platform">
+          <b>Linux</b>
+          <p>Install the package with your software center, or with apt.</p>
+          <span class="file">Muster.deb</span>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      <span>Muster</span>
+      <a href="https://github.com/saiphanindra1010/muster">github.com/saiphanindra1010/muster</a>
+    </footer>
+  </div>
+  <script>
+    var root = document.documentElement;
+    var button = document.getElementById("theme");
+    function label() { button.textContent = root.dataset.theme === "dark" ? "Light" : "Dark"; }
+    label();
+    button.addEventListener("click", function () {
+      var next = root.dataset.theme === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      localStorage.setItem("muster.site.theme", next);
+      label();
+    });
+  </script>
+</body>
+</html>

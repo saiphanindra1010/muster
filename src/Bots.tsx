@@ -16,7 +16,7 @@ import {
   type BotDraft,
   type PermRule,
 } from "./lib/bots";
-import { BotAvatar, TILE_COLORS } from "./avatar";
+import { FaceGraphic, FacePicker, faceFor, forgetFace, setFace, type Face } from "./avatar";
 import { IconBan, IconSave, IconTrash, IconX } from "./icons";
 import { workspaceDir } from "./lib/opencode";
 import { useEscape } from "./lib/useEscape";
@@ -25,10 +25,9 @@ import { useEscape } from "./lib/useEscape";
  * Bot settings drawer: edit one bot (system prompt, skills, MCP, advanced).
  * Rendered as a right-side overlay from the sidebar gear icon.
  */
-export function BotSettings({ botId, displayName: displayNameProp, models, onClose, onChanged, onDeleted, onRenamed, onDisplayNameChange }: {
+export function BotSettings({ botId, displayName: displayNameProp, onClose, onChanged, onDeleted, onRenamed, onDisplayNameChange }: {
   botId: string;
   displayName?: string;
-  models: string[];
   onClose: () => void;
   onChanged: () => void;
   onDeleted: (botId: string) => void;
@@ -43,6 +42,7 @@ export function BotSettings({ botId, displayName: displayNameProp, models, onClo
   const [allMcp, setAllMcp] = useState<McpServer[]>([]);
   const [status, setStatus] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [face, setFaceDraft] = useState<Face>(() => faceFor(botId));
   const ws = workspaceDir();
 
   useEscape(onClose);
@@ -86,7 +86,9 @@ export function BotSettings({ botId, displayName: displayNameProp, models, onClo
     }
     try {
       setStatus("Saving…");
-      await saveBot(draft, unknown, rules, botId);
+      await saveBot({ ...draft, color: face.color, model: "" }, unknown, rules, botId);
+      setFace(target, face);
+      if (target !== botId) forgetFace(botId);
       onDisplayNameChange?.(displayName.trim());
       if (target !== botId) {
         await renameBotHistory(botId, target);
@@ -143,7 +145,9 @@ export function BotSettings({ botId, displayName: displayNameProp, models, onClo
         <div className="drawer-body">
           {status && <div className="hint">{status}</div>}
           <div className="bot-profile">
-            <BotAvatar seed={botId} color={draft?.color || undefined} size={88} />
+            <span className="bot-avatar" style={{ width: 72, height: 72 }}>
+              <FaceGraphic shape={face.shape} color={face.color} />
+            </span>
             <div className="bot-profile-copy">
               <div className="bot-profile-name">{displayName.trim() || prettyBotName(botId)}</div>
               <div className="bot-profile-handle">@{botId}</div>
@@ -163,65 +167,54 @@ export function BotSettings({ botId, displayName: displayNameProp, models, onClo
               <label>What this bot is for
                 <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Reviews my code and explains it" />
               </label>
-              <div className="bot-section">
-                <strong>Accent</strong>
-                <div className="swatches" role="group" aria-label="Avatar tile color">
-                  {TILE_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`swatch${draft.color.toLowerCase() === c ? " on" : ""}`}
-                      style={{ background: c }}
-                      onClick={() => setDraft({ ...draft, color: c })}
-                      title={c}
-                      aria-label={`Avatar color ${c}`}
-                      aria-pressed={draft.color.toLowerCase() === c}
-                    />
-                  ))}
+              <details>
+                <summary>Face</summary>
+                <div style={{ marginTop: 10 }}>
+                  <FacePicker value={face} onChange={setFaceDraft} />
                 </div>
-                <div className="hint">Sets the avatar tile color.</div>
-              </div>
-              <div className="bot-section">
-                <strong>Skills</strong>
-                {draft.skills.length === 0 ? (
-                  <div className="hint">All skills are enabled by default, including ones added later. Turn one off to manage the list manually.</div>
-                ) : (
-                  <div className="hint">
-                    Manual selection. <button className="link-btn" onClick={() => setDraft({ ...draft, skills: [] })}>Restore default (all enabled)</button>
-                  </div>
-                )}
-                {allSkills.length === 0 && <div className="hint">No skills installed yet.</div>}
-                {allSkills.map((s) => {
-                  const id = s.id;
-                  const label = s.name;
-                  const on = draft.skills.length === 0 || draft.skills.includes(id);
-                  return (
-                    <label key={id} className="check">
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => {
-                          if (draft.skills.length === 0) {
-                            // Leaving default mode: materialize "all minus this one".
-                            const allIds = allSkills.map((x) => x.id);
-                            setDraft({ ...draft, skills: allIds.filter((x) => x !== id) });
-                          } else {
-                            setDraft({
-                              ...draft,
-                              skills: on ? draft.skills.filter((x) => x !== id) : [...draft.skills, id],
-                            });
-                          }
-                        }}
-                      />
-                      <span><strong>{label}</strong>{s.description ? `: ${s.description}` : ""}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              <div className="bot-section">
-                <strong>Tools (MCP)</strong>
+              </details>
+              <details>
+                <summary>Skills{draft.skills.length === 0 ? " · all on" : ""}</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                  {draft.skills.length === 0 ? (
+                    <div className="hint">Every skill stays on, including ones added later. Turn one off only if you need to.</div>
+                  ) : (
+                    <div className="hint">
+                      A few are off. <button className="link-btn" onClick={() => setDraft({ ...draft, skills: [] })}>Turn them all back on</button>
+                    </div>
+                  )}
+                  {allSkills.length === 0 && <div className="hint">No skills installed yet.</div>}
+                  {allSkills.map((s) => {
+                    const id = s.id;
+                    const on = draft.skills.length === 0 || draft.skills.includes(id);
+                    return (
+                      <label key={id} className="check" title={s.description || s.name}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => {
+                            if (draft.skills.length === 0) {
+                              const allIds = allSkills.map((x) => x.id);
+                              setDraft({ ...draft, skills: allIds.filter((x) => x !== id) });
+                            } else {
+                              setDraft({
+                                ...draft,
+                                skills: on ? draft.skills.filter((x) => x !== id) : [...draft.skills, id],
+                              });
+                            }
+                          }}
+                        />
+                        <span>{s.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </details>
+              <details>
+                <summary>Tools</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
                 {Object.keys(draft.mcp).length === 0 && (
-                  <div className="hint">All tools are allowed by default. Set a tool to Deny to block it.</div>
+                  <div className="hint">Every tool stays available. Set one to Deny to block it.</div>
                 )}
                 {allMcp.length === 0 && <div className="hint">No tools connected yet. Add one from Tools in the sidebar first.</div>}
                 {allMcp.map((m) => {
@@ -257,7 +250,8 @@ export function BotSettings({ botId, displayName: displayNameProp, models, onClo
                     </div>
                   );
                 })}
-              </div>
+                </div>
+              </details>
               <details>
                 <summary>Advanced</summary>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
@@ -267,12 +261,6 @@ export function BotSettings({ botId, displayName: displayNameProp, models, onClo
                   {draft.name !== botId && (
                     <div className="hint">Renaming keeps this bot's chat history. You can also keep the current name.</div>
                   )}
-                  <label>Model
-                    <select value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })}>
-                      <option value="">Automatic</option>
-                      {models.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
-                    </select>
-                  </label>
                   <label>System prompt
                     <textarea rows={7} value={draft.system} onChange={(e) => setDraft({ ...draft, system: e.target.value })} placeholder="You are an experienced coach. Keep answers short and practical." />
                   </label>

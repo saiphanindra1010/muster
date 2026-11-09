@@ -1,8 +1,7 @@
 /* Muster - Tailwind v4 + hand-rolled component classes on shared tokens.
-   Two appearances (dark default, light twin) resolved from the OS by
-   dataset.theme on <html>; every color below is a semantic token so both
-   stay honest. The shell (sidebar, toolbar, composer, modals, drawers) uses
-   a frosted Liquid Glass material; message content stays opaque. */
+   Two appearances (dark default, light twin) via dataset.theme on <html>.
+   The shell is opaque so scrolling stays smooth. Message content uses the
+   same surfaces. */
 @import "tailwindcss";
 
 @theme {
@@ -18,19 +17,20 @@
    Tokens - dark. Contrast figures are against the surface each role sits on.
 --------------------------------------------------------------------------- */
 :root {
+  --brand-sentry: #b9a9ff;
   color-scheme: dark;
 
-  /* Surfaces */
-  --bg: #161617;
-  --sidebar: #1b1b1d;
-  --panel: #222225;
-  --panel-2: #2b2b2e;
-  --bubble: #323236;                 /* your messages - neutral, not brand */
-  --code-bg: #1a1a1c;
+  /* Surfaces - pure black, like a quiet chat app */
+  --bg: #000000;
+  --sidebar: #0a0a0a;
+  --panel: #141414;
+  --panel-2: #1c1c1c;
+  --bubble: #1c1c1c;                 /* your messages - neutral, not brand */
+  --code-bg: #141417;
   --fill: rgba(255, 255, 255, 0.06); /* chips, pills, badges */
-  --hover: rgba(255, 255, 255, 0.08);
-  --hover-strong: rgba(255, 255, 255, 0.13);
-  --row-hover: rgba(255, 255, 255, 0.025);
+  --hover: rgba(255, 255, 255, 0.07);
+  --hover-strong: rgba(255, 255, 255, 0.12);
+  --row-hover: rgba(255, 255, 255, 0.04);
 
   /* Lines */
   --line: rgba(255, 255, 255, 0.10);
@@ -38,16 +38,16 @@
   --bubble-line: rgba(255, 255, 255, 0.07);
 
   /* Content */
-  --txt: #f5f5f7;                    /* 16.6:1 on --bg */
+  --txt: #f4f4f5;                    /* 16.4:1 on --bg */
   --strong: #ffffff;
-  --dim: #b8b8c0;                    /* 9.2:1 on --bg */
-  --faint: #a0a0aa;                  /* 7.0:1 on --bg, 4.9:1 on --bubble */
+  --dim: #b4b4be;                    /* 9.0:1 on --bg */
+  --faint: #9c9ca8;                  /* 6.6:1 on --bg, 4.7:1 on --bubble */
 
-  /* Brand + signals */
-  --accent: #8b8cf8;                 /* 6.2:1 on --bg */
-  --accent-ring: rgba(139, 140, 248, 0.85);
-  --accent-ring-soft: rgba(139, 140, 248, 0.10);
-  --sel: rgba(139, 140, 248, 0.35);
+  /* Brand is the text color itself. No violet. */
+  --accent: #f4f4f5;
+  --accent-ring: rgba(255, 255, 255, 0.70);
+  --accent-ring-soft: rgba(255, 255, 255, 0.10);
+  --sel: rgba(255, 255, 255, 0.16);
   --green: #3ddc84;
   --red: #ff7b72;
   --amber: #ffbd59;
@@ -65,23 +65,22 @@
   --danger-bg: rgba(255, 123, 114, 0.10);
   --danger-line: rgba(255, 123, 114, 0.35);
 
-  /* Ambient wash behind the glass shell */
-  --ambient-1: rgba(139, 140, 248, 0.15);
-  --ambient-2: rgba(94, 158, 255, 0.09);
+  --ambient-1: transparent;
+  --ambient-2: transparent;
 
-  /* Liquid Glass - a frosted regular material, never clear glass */
-  --glass-bg: rgba(34, 34, 37, 0.68);
-  --glass-bg-strong: rgba(27, 27, 29, 0.82);
-  --glass-line: rgba(255, 255, 255, 0.11);
-  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 58%);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --glass-blur: 30px;
-  --glass-sat: 150%;
+  /* Kept so older rules and the contrast fallback still resolve. Unused on the shell. */
+  --glass-bg: #1c1c20;
+  --glass-bg-strong: #17171a;
+  --glass-line: rgba(255, 255, 255, 0.10);
+  --glass-sheen: none;
+  --glass-highlight: none;
+  --glass-blur: 0px;
+  --glass-sat: 100%;
 
   /* Controls */
-  --primary-bg: #6465e0;
-  --primary-fg: #ffffff;
-  --toggle-off: #303034;             /* idle send button */
+  --primary-bg: #ffffff;
+  --primary-fg: #000000;
+  --toggle-off: #2a2a2a;             /* idle send button */
   --veil: rgba(0, 0, 0, 0.56);
   --sb: rgba(255, 255, 255, 0.10);
   --sb-hover: rgba(255, 255, 255, 0.20);
@@ -98,14 +97,15 @@
    Tokens - light. Same roles, fluid across daylit rooms.
 --------------------------------------------------------------------------- */
 :root[data-theme="light"] {
+  --brand-sentry: #362d59;
   color-scheme: light;
 
-  --bg: #f6f6f8;
-  --sidebar: #eeeef2;
+  --bg: #ffffff;
+  --sidebar: #f7f7f8;
   --panel: #ffffff;
-  --panel-2: #f1f1f5;
-  --bubble: #e8e8ee;                 /* your messages - neutral, not brand */
-  --code-bg: #f2f3f7;
+  --panel-2: #f3f3f6;
+  --bubble: #ececf1;                 /* your messages - neutral, not brand */
+  --code-bg: #f3f4f6;
   --fill: rgba(20, 20, 43, 0.06);
   --hover: rgba(20, 20, 43, 0.05);
   --hover-strong: rgba(20, 20, 43, 0.09);
@@ -120,10 +120,10 @@
   --dim: #55565e;                    /* 6.7:1 on --bg */
   --faint: #63646f;                  /* 5.4:1 on --bg, 4.8:1 on --bubble */
 
-  --accent: #5758d6;                 /* 5.2:1 on --bg */
-  --accent-ring: rgba(87, 88, 214, 0.55);
-  --accent-ring-soft: rgba(87, 88, 214, 0.12);
-  --sel: rgba(87, 88, 214, 0.20);
+  --accent: #111111;
+  --accent-ring: rgba(0, 0, 0, 0.55);
+  --accent-ring-soft: rgba(0, 0, 0, 0.08);
+  --sel: rgba(0, 0, 0, 0.08);
   --green: #128a4d;
   --red: #c0392f;
   --amber: #9a6700;
@@ -140,17 +140,17 @@
   --danger-bg: #fdeceb;
   --danger-line: #efb7b2;
 
-  --ambient-1: rgba(139, 140, 248, 0.22);
-  --ambient-2: rgba(94, 158, 255, 0.15);
+  --ambient-1: transparent;
+  --ambient-2: transparent;
 
-  --glass-bg: rgba(255, 255, 255, 0.66);
-  --glass-bg-strong: rgba(255, 255, 255, 0.84);
+  --glass-bg: #ffffff;
+  --glass-bg-strong: #ffffff;
   --glass-line: rgba(20, 20, 43, 0.10);
-  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.80), rgba(255, 255, 255, 0) 62%);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.90);
-  --glass-shadow: 0 18px 44px rgba(20, 20, 43, 0.12);
+  --glass-sheen: none;
+  --glass-highlight: none;
+  --glass-shadow: 0 18px 44px rgba(20, 20, 43, 0.08);
 
-  --primary-bg: #5758d6;
+  --primary-bg: #111111;
   --primary-fg: #ffffff;
   --toggle-off: #e4e4ea;
   --veil: rgba(28, 28, 34, 0.34);
@@ -209,6 +209,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 @media (prefers-reduced-motion: reduce) {
   .slack-msg.live { animation: none; }
   .run-dot, .status-dot.working, .dots i { animation: none; }
+  .face-body, .face-eyes, .face-eye { animation: none; }
   .chev, .msg-actions, .avatar-ghost { transition: none; }
   html.theme-anim, html.theme-anim * { transition: none !important; }
 }
@@ -217,11 +218,8 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .layout { display: flex; height: 100%; background: transparent; }
 .side {
   width: 272px; flex-shrink: 0;
-  background: var(--glass-sheen), var(--glass-bg-strong);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  border-right: 1px solid var(--glass-line);
-  box-shadow: var(--glass-highlight);
+  background: var(--sidebar);
+  border-right: 1px solid var(--line-soft);
   display: flex; flex-direction: column; padding: 12px 10px;
   gap: 4px;
 }
@@ -254,6 +252,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
   white-space: nowrap; overflow: hidden; user-select: none;
 }
 .bot-row:hover, .bot-row.active { background: var(--hover); }
+.bot-row { transition: background-color 0.12s ease; }
 .bot-row.off { opacity: 0.5; }
 .bot-row.off:hover { opacity: 0.8; }
 
@@ -282,8 +281,8 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .status-dot.done { background: var(--accent); }
 .bot-row.needs { background: var(--warn-bg); }
 @keyframes status-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.8); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 .bot-row .gear {
   margin-left: auto; opacity: 0; background: transparent; border: none;
@@ -293,41 +292,90 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .bot-row:hover .gear, .bot-row.active .gear, .bot-row:focus-within .gear { opacity: 1; }
 .bot-row .gear:hover { background: var(--hover-strong); color: var(--txt); }
 .avatar {
-  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 700; color: var(--txt);
+  color: #fff;
 }
-.avatar.small { width: 24px; height: 24px; border-radius: 7px; overflow: hidden; }
+.avatar.small { width: 24px; height: 24px; border-radius: 50%; overflow: hidden; }
 .bot-avatar {
   position: relative; display: inline-flex; align-items: center; justify-content: center;
-  flex-shrink: 0; overflow: visible; border-radius: 30%;
-  background: var(--tile, #34347a);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 2px 8px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0; overflow: visible;
 }
-/* A single soft rim light. No glow, no gradient wash. */
-.bot-avatar::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+.bot-avatar svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.face-body { stroke: rgba(0, 0, 0, 0.16); stroke-width: 3; }
+@media (prefers-reduced-motion: no-preference) {
+  .bot-avatar .face-body {
+    transform-box: fill-box; transform-origin: center;
+    animation: face-bob 3.4s ease-in-out infinite;
+    animation-delay: var(--face-delay, 0s);
+  }
+  .bot-avatar .face-eyes {
+    transform-box: fill-box; transform-origin: center;
+    animation: face-look 6.4s ease-in-out infinite;
+    animation-delay: var(--face-delay, 0s);
+  }
+  .bot-avatar .face-eye {
+    transform-box: fill-box; transform-origin: center;
+    animation: face-blink 5.2s ease-in-out infinite;
+    animation-delay: var(--face-delay, 0s);
+  }
 }
-.bot-avatar img {
-  position: relative; z-index: 1; width: 92%; height: 92%;
-  object-fit: contain;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.28));
+@keyframes face-bob {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(-3%) scale(1.03, 0.97); }
 }
+@keyframes face-blink {
+  0%, 88%, 100% { transform: scaleY(1); }
+  92% { transform: scaleY(0.08); }
+  96% { transform: scaleY(1); }
+}
+@keyframes face-look {
+  0%, 64%, 100% { transform: translateX(0); }
+  76% { transform: translateX(4px); }
+  88% { transform: translateX(-3px); }
+}
+.face-stage { display: flex; justify-content: center; padding: 4px 0; }
+.create-bot { width: min(400px, 100%); }
+.create-bot form { display: flex; flex-direction: column; gap: 14px; }
+.face-picker { display: flex; flex-direction: column; gap: 12px; }
+.face-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.face-pick {
+  aspect-ratio: 1; padding: 2px; border-radius: 12px; cursor: pointer;
+  border: 2px solid transparent; background: transparent;
+}
+.face-pick svg { width: 100%; height: 100%; display: block; }
+.face-pick:hover { background: var(--hover); }
+.face-pick.on { border-color: var(--txt); }
+.color-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.color-dot {
+  width: 22px; height: 22px; border-radius: 50%; padding: 0; cursor: pointer;
+  border: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+.color-dot.on { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2), 0 0 0 2px var(--panel), 0 0 0 4px var(--txt); }
 /* Presence sits on the tile corner - never clipped by it. */
 .bot-avatar .presence {
   position: absolute; right: -1px; bottom: -1px; z-index: 2;
   width: 28%; height: 28%; min-width: 9px; min-height: 9px; border-radius: 50%;
   box-shadow: 0 0 0 2px var(--bg);
 }
-.side .bot-avatar .presence { box-shadow: 0 0 0 2px var(--glass-bg-strong); }
+.side .bot-avatar .presence { box-shadow: 0 0 0 2px var(--sidebar); }
 .presence.working { background: var(--green); animation: status-pulse 1.4s ease-in-out infinite; }
 .presence.needs-you { background: var(--amber); }
 .presence.done { background: var(--accent); }
 .side-foot {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
   padding: 8px 6px 2px; border-top: 1px solid var(--line-soft); margin-top: 6px;
 }
+.appearance {
+  display: flex; gap: 2px; padding: 2px;
+  border-radius: 8px; background: var(--fill); border: 1px solid var(--line-soft);
+}
+.appearance button {
+  flex: 1; border: none; background: transparent; color: var(--dim);
+  font-size: 11px; font-weight: 600; padding: 4px 0; border-radius: 6px; cursor: pointer;
+}
+.appearance button:hover { color: var(--txt); }
+.appearance button.on { background: var(--panel-2); color: var(--txt); }
 .side-status { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.4; color: var(--faint); text-wrap: balance; }
 
 /* ---------- main ---------- */
@@ -335,30 +383,13 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .topbar {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 18px; min-height: 52px;
-  background: var(--glass-sheen), var(--glass-bg);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  border-bottom: 1px solid var(--glass-line);
-  box-shadow: var(--glass-highlight);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-soft);
 }
 .topbar .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .topbar .who strong { font-size: 14px; font-weight: 650; }
 .topbar .who .dim { font-size: 11.5px; }
 .topbar .spacer { flex: 1; }
-.model-mini {
-  position: relative; font-size: 12px; color: var(--dim); cursor: pointer;
-  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--glass-line);
-  background: var(--fill);
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.model-mini:hover { background: var(--hover); color: var(--txt); }
-.model-mini:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring-soft); }
-.model-mini select {
-  appearance: none; -webkit-appearance: none;
-  background: transparent; border: none; color: inherit;
-  cursor: pointer; max-width: 200px; text-overflow: ellipsis;
-}
-.model-mini select:focus { outline: none; }
 
 /* ---------- welcome / hero ---------- */
 .hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px; overflow-y: auto; }
@@ -385,17 +416,15 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 /* The one input that matters. Quiet panel; focus answers with a soft accent
    ring, not a shout. */
 .composer {
-  background: var(--glass-sheen), var(--glass-bg);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  border: 1px solid var(--glass-line); border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line); border-radius: 16px;
   padding: 11px 11px 8px; display: flex; flex-direction: column; gap: 6px;
-  box-shadow: var(--shadow-composer), var(--glass-highlight); width: 100%;
+  box-shadow: var(--shadow-composer); width: 100%;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .composer:focus-within {
   border-color: var(--accent-ring);
-  box-shadow: 0 0 0 3px var(--accent-ring-soft), var(--shadow-composer), var(--glass-highlight);
+  box-shadow: 0 0 0 3px var(--accent-ring-soft), var(--shadow-composer);
 }
 .composer textarea {
   background: transparent; color: var(--txt); border: none; resize: none;
@@ -412,7 +441,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .send-btn.ready { background: var(--primary-bg); color: var(--primary-fg); }
-.send-btn.ready:hover { transform: scale(1.05); }
+.send-btn.ready:hover { filter: brightness(1.08); }
 .send-btn:disabled { cursor: default; }
 .send-btn.stop { background: transparent; border: 1px solid var(--line); color: var(--dim); }
 .send-btn.stop:hover { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-line); }
@@ -525,8 +554,8 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
   animation: runpulse 1.2s ease-in-out infinite;
 }
 @keyframes runpulse {
-  0%, 100% { opacity: 0.35; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.05); }
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
 }
 /* Optimistic "you" bubbles waiting in the harness inbox. */
 .queued-tag {
@@ -583,18 +612,14 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 /* ---------- modal ---------- */
 .modal-veil {
   position: fixed; inset: 0; z-index: 50; background: var(--veil);
-  -webkit-backdrop-filter: blur(8px) saturate(120%);
-  backdrop-filter: blur(8px) saturate(120%);
   display: flex; align-items: flex-start; justify-content: center; padding: 12vh 20px 20px;
 }
 .modal {
   width: min(520px, 100%);
-  background: var(--glass-sheen), var(--glass-bg-strong);
-  -webkit-backdrop-filter: blur(34px) saturate(160%);
-  backdrop-filter: blur(34px) saturate(160%);
-  border: 1px solid var(--glass-line);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 11px;
-  box-shadow: var(--shadow-modal), var(--glass-highlight);
+  box-shadow: var(--shadow-modal);
 }
 .modal-head { display: flex; align-items: center; gap: 10px; }
 .modal-head h3 { margin: 0; flex: 1; }
@@ -630,16 +655,12 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 /* ---------- settings drawer ---------- */
 .drawer-veil {
   position: fixed; inset: 0; z-index: 40; background: var(--veil);
-  -webkit-backdrop-filter: blur(8px) saturate(120%);
-  backdrop-filter: blur(8px) saturate(120%);
 }
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 41; width: min(420px, 94vw);
-  background: var(--glass-sheen), var(--glass-bg-strong);
-  -webkit-backdrop-filter: blur(34px) saturate(160%);
-  backdrop-filter: blur(34px) saturate(160%);
-  border-left: 1px solid var(--glass-line);
-  box-shadow: var(--shadow-modal), var(--glass-highlight);
+  background: var(--sidebar);
+  border-left: 1px solid var(--line-soft);
+  box-shadow: var(--shadow-modal);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .drawer-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
@@ -648,13 +669,39 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .drawer-body label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--dim); }
 .drawer-body input:not([type="checkbox"]):not([type="color"]), .drawer-body select, .drawer-body textarea {
-  background: var(--bg); color: var(--txt); border: 1px solid var(--line);
-  border-radius: 8px; padding: 8px 10px; font-weight: 400;
+  background: var(--panel); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 12px; font-weight: 400; font-size: 13.5px;
+  transition: border-color 0.12s ease;
 }
+.drawer-body input::placeholder, .drawer-body textarea::placeholder { color: var(--faint); }
+.drawer-body input:not([type="checkbox"]):hover:not(:focus), .drawer-body textarea:hover:not(:focus) { border-color: var(--hover-strong); }
+.drawer-body textarea { line-height: 1.5; resize: vertical; }
 .drawer-body input:focus, .drawer-body select:focus, .drawer-body textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring-soft); }
-.drawer-body details { border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px 12px; font-size: 13px; }
-.drawer-body summary { cursor: pointer; color: var(--dim); font-weight: 600; font-size: 12px; }
-.bot-profile { display: flex; align-items: center; gap: 14px; padding: 2px 0 8px; }
+.drawer-body .hint { font-size: 12px; line-height: 1.45; }
+.drawer-body details {
+  border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel);
+  padding: 0 14px; font-size: 13px;
+}
+.drawer-body details[open] { padding-bottom: 14px; }
+.drawer-body summary {
+  list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 12px 0; color: var(--txt); font-weight: 600; font-size: 13px; user-select: none;
+}
+.drawer-body summary::-webkit-details-marker { display: none; }
+.drawer-body summary::after {
+  content: ""; margin-left: auto; width: 7px; height: 7px; flex: 0 0 auto;
+  border-right: 1.5px solid var(--dim); border-bottom: 1.5px solid var(--dim);
+  transform: rotate(45deg); transition: transform 0.15s ease;
+}
+.drawer-body details[open] > summary::after { transform: rotate(-135deg); }
+.drawer-body summary:hover { color: var(--strong); }
+.bot-profile {
+  display: flex; align-items: center; gap: 14px; padding: 4px 0 8px;
+}
+.bot-profile > .bot-avatar {
+  border-radius: 18px; padding: 8px; box-sizing: border-box;
+  background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-soft);
+}
 .bot-profile-copy { min-width: 0; }
 .bot-profile-name {
   font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2;
@@ -670,6 +717,9 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .swatch:hover { transform: translateY(-1px); }
 .swatch.on { outline: 2px solid var(--accent); outline-offset: 2px; }
 .drawer-foot { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line-soft); }
+.drawer-foot > button { white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.drawer-foot .btn-primary { flex: 1; }
+.drawer-foot .btn-ghost, .drawer-foot .btn-danger { padding: 8px 12px; }
 .icon-btn {
   background: transparent; color: var(--dim); border: none; border-radius: 8px;
   padding: 7px; cursor: pointer; display: flex; flex-shrink: 0;
@@ -697,11 +747,11 @@ input[type="checkbox"] {
   transition: background .13s ease, border-color .13s ease, box-shadow .13s ease;
 }
 input[type="checkbox"]:hover { border-color: var(--accent); }
-input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked { background: var(--txt); border-color: var(--txt); }
 input[type="checkbox"]::before {
   content: "";
   width: 8px; height: 4.5px;
-  border: solid #fff; border-width: 0 0 1.8px 1.8px;
+  border: solid var(--bg); border-width: 0 0 1.8px 1.8px;
   transform: translateY(-1px) rotate(-45deg);
   opacity: 0;
   transition: opacity .1s ease;
@@ -780,6 +830,33 @@ input[type="color"]:focus-visible { outline: none; border-color: var(--accent); 
 }
 .mkt-tabs button:hover { color: var(--txt); }
 .mkt-tabs button.on { background: var(--panel-2); color: var(--txt); border-color: var(--line); }
+.modal.market { width: min(760px, 100%); }
+.mkt-scroll { max-height: 62vh; overflow: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 2px; }
+.mkt-apps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mkt-app {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px 10px; align-items: start;
+  border: 1px solid var(--line-soft); border-radius: 14px; padding: 12px;
+  background: var(--panel);
+}
+.mkt-logo {
+  width: 40px; height: 40px; border-radius: 10px; background: var(--panel-2); color: var(--dim);
+  display: grid; place-items: center; box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+.mkt-app .mkt-btn.primary { background: var(--primary-bg); color: var(--primary-fg); border-color: transparent; }
+.mkt-app .mkt-btn.primary:hover:not(:disabled) { color: var(--primary-fg); filter: brightness(0.94); }
+.mkt-app .mkt-btn.done { color: var(--green); border-color: var(--line-soft); }
+.mkt-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mkt-name { display: flex; align-items: flex-start; gap: 8px; }
+.mkt-name strong { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.3; }
+.mkt-copy .mkt-blurb { font-size: 12px; color: var(--dim); line-height: 1.35; }
+.mkt-copy .mkt-chip { align-self: flex-start; margin-top: 4px; }
+.mkt-app .mkt-token { grid-column: 1 / -1; }
+.mkt-section h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+.mkt-more { border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 12px; }
+.mkt-more summary { cursor: pointer; font-size: 13px; font-weight: 620; color: var(--dim); }
+.mkt-more .mkt-apps { margin-top: 10px; }
+.mkt-more .mkt-custom { margin-top: 10px; }
+@media (max-width: 720px) { .mkt-apps { grid-template-columns: 1fr; } }
 .mkt-grid { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow: auto; padding-right: 4px; }
 .mkt-card { border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .mkt-head { display: flex; align-items: center; gap: 9px; }
@@ -801,7 +878,7 @@ input[type="color"]:focus-visible { outline: none; border-color: var(--accent); 
 .mkt-chip.ok { color: var(--green); background: var(--ok-bg); }
 .mkt-chip.warn { color: var(--amber); background: var(--warn-bg); }
 .mkt-chip.err { color: var(--red); background: var(--danger-bg); }
-.mkt-actions { display: flex; gap: 6px; align-items: center; }
+.mkt-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .mkt-btn {
   display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 8px;
   border: 1px solid var(--line-soft); background: transparent; color: var(--dim);
@@ -841,8 +918,8 @@ input[type="color"]:focus-visible { outline: none; border-color: var(--accent); 
     --fill: rgba(255, 255, 255, 0.10);
     --hover: rgba(255, 255, 255, 0.12);
     --hover-strong: rgba(255, 255, 255, 0.18);
-    --accent: #b3b4ff;
-    --accent-ring: rgba(179, 180, 255, 0.85);
+    --accent: #ffffff;
+    --accent-ring: rgba(255, 255, 255, 0.85);
     --glass-bg: rgba(30, 30, 33, 0.92);
     --glass-bg-strong: rgba(26, 26, 28, 0.96);
     --glass-line: rgba(255, 255, 255, 0.28);
@@ -861,8 +938,8 @@ input[type="color"]:focus-visible { outline: none; border-color: var(--accent); 
     --fill: rgba(20, 20, 43, 0.10);
     --hover: rgba(20, 20, 43, 0.09);
     --hover-strong: rgba(20, 20, 43, 0.15);
-    --accent: #3f40c4;
-    --accent-ring: rgba(63, 64, 196, 0.85);
+    --accent: #000000;
+    --accent-ring: rgba(0, 0, 0, 0.75);
     --glass-bg: rgba(255, 255, 255, 0.94);
     --glass-bg-strong: rgba(255, 255, 255, 0.97);
     --glass-line: rgba(20, 20, 43, 0.26);

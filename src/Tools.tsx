@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import type { McpServer } from "@opencode/client";
-import { connectMcpServer, disconnectMcpServer, listMcp, mcpStatusLabel, slugify } from "./lib/bots";
+import {
+  beginMcpSignIn,
+  connectMcpServer,
+  disconnectMcpServer,
+  holdSignInTab,
+  listMcp,
+  mcpStatusLabel,
+  slugify,
+  waitForMcpSignIn,
+} from "./lib/bots";
 import { installMcpServer, uninstallMcpServer } from "./lib/marketplace";
 import { IconPlus, IconX } from "./icons";
 import { useEscape } from "./lib/useEscape";
@@ -15,7 +24,7 @@ function statusColor(st: string): string {
  * Tools modal: connected MCP servers / plugins (Gmail-style connectors are
  * remote MCP servers), with connect / disconnect / remove and an add form.
  * Entries are written to the workspace opencode.jsonc so they persist.
- * Servers that need OAuth sign-in show a status - the harness owns that flow.
+ * Servers that need OAuth sign-in open the provider's page from here.
  */
 export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -87,7 +96,33 @@ export function Tools({ onClose, onChanged }: { onClose: () => void; onChanged: 
               </span>
               <span style={{ display: "flex", gap: 6 }}>
                 {st !== "connected" && st !== "pending" && (
-                  <button onClick={() => run(() => connectMcpServer(s.name))} disabled={busy}>Connect</button>
+                  <button
+                    onClick={() => {
+                      const integrationID = s.integrationID;
+                      const tab = integrationID && st === "needs_auth" ? holdSignInTab() : null;
+                      run(async () => {
+                        let opened = false;
+                        try {
+                          if (integrationID && tab) {
+                            const attempt = await beginMcpSignIn(integrationID);
+                            tab.go(attempt.url);
+                            opened = true;
+                            if (attempt.mode === "code") {
+                              throw new Error(attempt.instructions || "Paste the code from the sign-in page in Apps.");
+                            }
+                            await waitForMcpSignIn(integrationID, attempt.attemptID);
+                          }
+                          await connectMcpServer(s.name);
+                        } catch (e) {
+                          if (!opened) tab?.close();
+                          throw e;
+                        }
+                      });
+                    }}
+                    disabled={busy}
+                  >
+                    {st === "needs_auth" ? "Sign in" : "Connect"}
+                  </button>
                 )}
                 {(st === "connected" || st === "pending") && (
                   <button onClick={() => run(() => disconnectMcpServer(s.name))} disabled={busy}>Disconnect</button>

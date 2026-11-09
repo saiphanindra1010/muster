@@ -3,15 +3,17 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { McpServer, PermissionRequest, V2Event } from "@opencode/client";
 import { authHeaders, baseUrl, client, resolveTauriHarness, sessionLocation } from "./lib/opencode";
-import { chatHasStaleSkillMarker, createUntitledBot, deriveBotTitle, listBots, listDisabledBots, listMcp, mcpStatusLabel, prettyBotName, upgradeBotPersonas } from "./lib/bots";
+import { chatHasStaleSkillMarker, createNamedBot, deriveBotTitle, listBots, listDisabledBots, listMcp, mcpStatusLabel, prettyBotName, upgradeBotPersonas } from "./lib/bots";
+import { routeModel } from "./lib/router";
 import {
   IconActivity, IconArrowUp, IconCheck, IconChevronDown, IconCopy,
   IconGear, IconMark, IconPlus, IconStore, IconStop, IconThumbsDown, IconThumbsUp,
 } from "./icons";
-import { BotAvatar } from "./avatar";
+import { BotAvatar, forgetFace, renameFace, setFace, type Face } from "./avatar";
 import { BotSettings } from "./Bots";
+import { CreateBotDialog } from "./CreateBot";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { applyAppearance, watchSystemAppearance } from "./theme";
+import { applyAppearance, readAppearance, setAppearance, watchSystemAppearance, type Appearance } from "./theme";
 import { Tools } from "./Tools";
 import { Marketplace } from "./Marketplace";
 
@@ -295,6 +297,7 @@ export function App() {
   const [botNames, setBotNames] = useState<Record<string, string>>(() => loadBotNames());
   const [botOrder, setBotOrder] = useState<string[]>(() => loadBotOrder());
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [settingsBot, setSettingsBot] = useState<string | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const watchdogs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -320,6 +323,8 @@ export function App() {
   const inputRef = useRef("");
   const botNamesRef = useRef<Record<string, string>>(botNames);
   const botOrderRef = useRef<string[]>(botOrder);
+  const modelsRef = useRef<ModelOpt[]>(models);
+  const sessionModelRef = useRef<Record<string, string>>(modelsBySession);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -369,6 +374,7 @@ export function App() {
       persistBotOrder(order);
       setBotOrder(order);
     }
+    renameFace(from, to);
   };
 
   /** Drop local roster state for a deleted bot. */
@@ -386,6 +392,7 @@ export function App() {
       persistBotOrder(order);
       setBotOrder(order);
     }
+    forgetFace(id);
   };
 
   const setActiveSession = (id: string | null, bot: string | null) => {
@@ -533,6 +540,14 @@ export function App() {
     activeBotRef.current = activeBot;
   }, [activeBot]);
 
+  useEffect(() => {
+    modelsRef.current = models;
+  }, [models]);
+
+  useEffect(() => {
+    sessionModelRef.current = modelsBySession;
+  }, [modelsBySession]);
+
   // Adopt bots that predate the local order (or were created elsewhere) at
   // the end. The list itself stays stable, so rows never jump around.
   useEffect(() => {
@@ -550,12 +565,11 @@ export function App() {
     if (liveRaf.current != null) cancelAnimationFrame(liveRaf.current);
   }, []);
 
-  // Appearance follows the OS. No app-level override: light/dark are twins,
-  // and the OS setting is the only source of truth.
+  const [appearance, setAppearanceState] = useState<Appearance>(() => readAppearance());
   useEffect(() => {
-    applyAppearance();
+    applyAppearance(appearance);
     return watchSystemAppearance();
-  }, []);
+  }, [appearance]);
 
   const refreshSessions = async () => {
     try {
@@ -842,23 +856,21 @@ export function App() {
     }
   };
 
-  /**
-   * One click, one bot. No form: the bot opens as "Untitled", greets the user
-   * in an empty chat, and takes its display name from the first real task.
-   */
-  const createQuickBot = async () => {
+  /** Writes the bot only after the dialog has a name. Create stays disabled until then. */
+  const createBot = async ({ name, face }: { name: string; face: Face }) => {
     if (creating) return;
     setCreating(true);
     try {
       const taken = new Set<string>(["build", "plan", "general", "explore", "compaction", "title", "summary"]);
       for (const b of bots) taken.add(b.id);
       for (const b of disabledBots) taken.add(b.id);
-      const slug = await createUntitledBot(taken);
+      const slug = await createNamedBot(name, taken, face.color);
+      setFace(slug, face);
+      setBotDisplayName(slug, name);
       rememberBotAtTop(slug);
       refreshCatalogs();
+      setCreateOpen(false);
       await openBot(slug);
-    } catch (e) {
-      say(`Could not create a bot: ${(e as Error).message}`);
     } finally {
       setCreating(false);
     }
@@ -913,6 +925,19 @@ export function App() {
       turns.current[id!] = turns.current[id!] ?? Date.now();
     }
     armWatchdog(id!);
+    const choice = routeModel(t, modelsRef.current);
+    if (choice && sessionModelRef.current[id!] !== choice.key) {
+      try {
+        await client.session.switchModel({
+          sessionID: id!,
+          model: { id: choice.id, providerID: choice.providerID },
+        });
+        sessionModelRef.current = { ...sessionModelRef.current, [id!]: choice.key };
+        setModelsBySession(sessionModelRef.current);
+      } catch {
+        // The message still sends on whatever model the chat already has.
+      }
+    }
     try {
       // The harness queues prompts sent mid-turn (inbox), so sending while
       // busy is safe - it runs right after the current turn.
@@ -1008,19 +1033,6 @@ export function App() {
       else n[key] = dir;
       return n;
     });
-
-  const switchModel = async (key: string) => {
-    const id = activeIDRef.current;
-    if (!id) return;
-    setModelsBySession((prev) => ({ ...prev, [id]: key }));
-    const m = models.find((x) => x.key === key);
-    if (!m) return;
-    try {
-      await client.session.switchModel({ sessionID: id, model: { id: m.id, providerID: m.providerID } });
-    } catch (e) {
-      say(`Could not switch model: ${(e as Error).message}`);
-    }
-  };
 
   useEffect(() => {
     let stopped = false;
@@ -1377,8 +1389,6 @@ export function App() {
   })();
   /** A fresh bot with no name yet - it introduces itself and waits for a task. */
   const untitled = !!activeBot && /^untitled(?:-\d+)?$/.test(activeBot) && !botNames[activeBot];
-  const model = activeID ? modelsBySession[activeID] ?? "" : "";
-
   const senderOf = (m: ChatMsg): { name: string; seed: string; user: boolean; col?: string } => {
     if (m.role === "user") return { name: "You", seed: "you", user: true };
     const id = m.agent ?? activeBot ?? "bot";
@@ -1537,7 +1547,7 @@ export function App() {
       <div key={row.tkey} className={`slack-msg ${compact ? "compact" : ""}${streamed ? " live" : ""}`}>
         {!compact ? (
           <div className="avatar">
-            <BotAvatar seed={s.seed} color={s.col} size={36} />
+            <BotAvatar seed={s.seed} name={s.name} color={s.col} size={36} />
           </div>
         ) : (
           <div className="avatar-ghost">{fmtTime(m.time)}</div>
@@ -1627,8 +1637,8 @@ export function App() {
           <b>Muster</b>
           <span className="status"><span className={`pulse ${harnessOk ? "" : "down"}`} />{harnessOk ? "online" : "offline"}</span>
         </div>
-        <button className="newbot-btn" onClick={createQuickBot} disabled={creating}>
-          <IconPlus size={15} /> {creating ? "Creating…" : "New bot"}
+        <button className="newbot-btn" onClick={() => setCreateOpen(true)}>
+          <IconPlus size={15} /> New bot
         </button>
         <nav>
           <div className="sec-label">Your team</div>
@@ -1660,6 +1670,7 @@ export function App() {
                   >
                     <BotAvatar
                       seed={b.id}
+                      name={botLabel(b.id)}
                       color={b.color}
                       size={38}
                       status={st === "working" || st === "needs-you" || st === "done" ? st : undefined}
@@ -1679,7 +1690,7 @@ export function App() {
               );
             })}
             {bots.length === 0 && (
-              <li><button className="bot-row" onClick={createQuickBot} disabled={creating}>Create your first bot</button></li>
+              <li><button className="bot-row" onClick={() => setCreateOpen(true)}>Create your first bot</button></li>
             )}
           </ul>
           {disabledBots.length > 0 && (
@@ -1693,7 +1704,7 @@ export function App() {
                       onClick={() => setSettingsBot(b.id)}
                       title={`${b.description ?? b.id} is disabled. Open settings to re-enable.`}
                     >
-                      <BotAvatar seed={b.id} color={b.color} size={34} />
+                      <BotAvatar seed={b.id} name={botLabel(b.id)} color={b.color} size={34} />
                       <span className="bot-copy">
                         <span className="nm">{botLabel(b.id)}</span>
                         <span className="bot-sub">Disabled</span>
@@ -1727,14 +1738,27 @@ export function App() {
               <li><button className="bot-row dim" onClick={() => setMarketOpen(true)}>Connect Gmail, GitHub…</button></li>
             )}
             <li>
-              <button className="bot-row" onClick={() => setMarketOpen(true)} title="Connectors, plugins and skills">
+              <button className="bot-row" onClick={() => setMarketOpen(true)} title="Add an app">
                 <IconStore size={15} />
-                <span className="nm">Marketplace</span>
+                <span className="nm">Apps</span>
               </button>
             </li>
           </ul>
         </nav>
         <footer className="side-foot">
+          <div className="appearance" role="group" aria-label="Appearance">
+            {(["system", "light", "dark"] as const).map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                className={appearance === choice ? "on" : ""}
+                aria-pressed={appearance === choice}
+                onClick={() => { setAppearance(choice); setAppearanceState(choice); }}
+              >
+                {choice === "system" ? "System" : choice === "light" ? "Light" : "Dark"}
+              </button>
+            ))}
+          </div>
           <span className="side-status">{harnessOk ? "Ready. Bots keep working in the background" : "Starting up…"}</span>
         </footer>
       </aside>
@@ -1747,31 +1771,30 @@ export function App() {
               <h1>Talk to your bots</h1>
               <div className="lede">
                 {bots.length === 0
-                  ? "Describe what you need. Your bot gets a name automatically and opens in chat."
+                  ? "Name a bot, pick a face, and it opens in chat."
                   : "Pick a bot and give it a task. It keeps working while you're away."}
               </div>
               {bots.length > 0 && (
                 <div className="bot-grid">
                   {orderedBots.map((b) => (
                     <button key={b.id} className="bot-card-btn" onClick={() => openBot(b.id)}>
-                      <BotAvatar seed={b.id} color={b.color} size={46} />
+                      <BotAvatar seed={b.id} name={botLabel(b.id)} color={b.color} size={46} />
                       <span style={{ minWidth: 0 }}><b>{botLabel(b.id)}</b><span>{b.description || "Ready for a task"}</span></span>
                     </button>
                   ))}
                 </div>
               )}
               <div className="create-row">
-                <button className="btn-primary" onClick={createQuickBot} disabled={creating}>
-                  <IconPlus size={15} /> {creating ? "Creating…" : bots.length === 0 ? "Create your first bot" : "New bot"}
+                <button className="btn-primary" onClick={() => setCreateOpen(true)}>
+                  <IconPlus size={15} /> {bots.length === 0 ? "Create your first bot" : "New bot"}
                 </button>
               </div>
-              <div className="hint" style={{ marginTop: 6 }}>One click. It says hi, then takes its name from your first task.</div>
             </div>
           </div>
         ) : (
           <>
             <div className="topbar">
-              <BotAvatar seed={activeBot} color={meta?.color} size={36} status={busy ? "working" : undefined} />
+              <BotAvatar seed={activeBot} name={botLabel(activeBot)} color={meta?.color} size={36} status={busy ? "working" : undefined} />
               <div className="who">
                 <button className="name-btn" title="Rename / edit this bot" onClick={() => setSettingsBot(activeBot)}>
                   <strong>{botLabel(activeBot)}</strong>
@@ -1779,13 +1802,6 @@ export function App() {
                 {meta?.description && <span className="dim">{meta.description}</span>}
               </div>
               <span className="spacer" />
-              <span className="model-mini" title="Model for this chat">
-                <select value={model} onChange={(e) => switchModel(e.target.value)} aria-label="Model for this chat">
-                  <option value="">Automatic</option>
-                  {models.map((m) => <option key={m.key} value={m.key}>{m.key}</option>)}
-                </select>
-                <IconChevronDown size={12} />
-              </span>
             </div>
             {perms.length > 0 && (
               <div className="perm">
@@ -1804,7 +1820,7 @@ export function App() {
             {msgs.length === 0 && !busy && pendList.length === 0 ? (
               <div className="hero">
                 <div className="hero-inner">
-                  <BotAvatar seed={activeBot} color={meta?.color} size={72} />
+                  <BotAvatar seed={activeBot} name={botLabel(activeBot)} color={meta?.color} size={72} />
                   {untitled ? (
                     <>
                       <h1>Hi, I'm <strong>{botLabel(activeBot)}</strong></h1>
@@ -1833,7 +1849,7 @@ export function App() {
                       <div className="avatar-ghost" />
                       <div className="slack-body">
                         <span className="working-label">
-                          <span className="run-dot" style={meta?.color ? { background: meta.color } : undefined} />
+                          <span className="run-dot" />
                           <span className="wl-bot">{botLabel(activeBot)}</span>
                           <span className="wl-act">is {activity}</span>
                           {elapsed && <span className="wl-clock">· {elapsed}</span>}
@@ -1859,7 +1875,6 @@ export function App() {
           <BotSettings
             botId={settingsBot}
             displayName={botNames[settingsBot] ?? ""}
-            models={models.map((m) => m.key)}
             onDisplayNameChange={(name) => setBotDisplayName(settingsBot, name)}
             onClose={() => setSettingsBot(null)}
             onChanged={() => { refreshCatalogs(); refreshSessions(); }}
@@ -1885,6 +1900,14 @@ export function App() {
         <ErrorBoundary key="tools" label="tools" onClose={() => setToolsOpen(false)}>
           <Tools onClose={() => setToolsOpen(false)} onChanged={() => { refreshCatalogs(); }} />
         </ErrorBoundary>
+      )}
+
+      {createOpen && (
+        <CreateBotDialog
+          busy={creating}
+          onClose={() => { if (!creating) setCreateOpen(false); }}
+          onCreate={createBot}
+        />
       )}
 
       {marketOpen && (

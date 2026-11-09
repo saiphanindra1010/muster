@@ -267,7 +267,9 @@ async fn run_harness(app: &AppHandle) -> Result<(), String> {
             }
             CommandEvent::Stderr(bytes) => {
                 let line = String::from_utf8_lossy(&bytes);
-                if !line.trim().is_empty() {
+                if line.contains(PASSWORD_PREFIX) {
+                    eprintln!("[muster:harness] server password [redacted]");
+                } else if !line.trim().is_empty() {
                     eprintln!("[muster:harness] {}", line.trim_end());
                 }
             }

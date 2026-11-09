@@ -124,12 +124,30 @@ const basicAuth = (pw: string) =>
 let password = "";
 const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
 const decoder = new TextDecoder();
+const redact = (s: string) => s.replace(/server password \S+/g, "server password [redacted]");
+
 const passwordCaptured = (async () => {
   let buf = "";
+  // Hold a partial line so the password cannot be written before we redact it.
+  let carry = "";
+  const emit = (chunk: string, flush: boolean) => {
+    carry += chunk;
+    const nl = carry.lastIndexOf("\n");
+    let complete = "";
+    if (nl >= 0) {
+      complete = carry.slice(0, nl + 1);
+      carry = carry.slice(nl + 1);
+    }
+    if (flush) {
+      complete += carry;
+      carry = "";
+    }
+    if (complete) process.stdout.write(redact(complete));
+  };
   for (;;) {
     const { done, value } = await reader.read();
     const chunk = decoder.decode(value ?? new Uint8Array(), { stream: !done });
-    process.stdout.write(chunk); // keep serve logs visible
+    emit(chunk, done);
     buf += chunk;
     // Bounded scan window - a long log burst before the password line must
     // not grow the buffer without limit (the password line is tiny).
@@ -139,6 +157,8 @@ const passwordCaptured = (async () => {
       password = m[1];
       writeFileSync(TOKEN_FILE, password + "\n", { mode: 0o600 });
       try { chmodSync(TOKEN_FILE, 0o600); } catch {}
+      if (carry) process.stdout.write(redact(carry));
+      carry = "";
       console.log(`[muster] token saved : ${TOKEN_FILE}`);
       reader.cancel().catch(() => {});
       return password;

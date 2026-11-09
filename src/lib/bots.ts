@@ -727,20 +727,22 @@ export async function createBotFromPrompt(text: string): Promise<string> {
 }
 
 /**
- * One-click bot: no form, no system prompt. The bot opens as "Untitled" and
- * learns what it is from the first task (the UI names it after that task).
+ * Named bot. The caller already collected the name; this only writes the file.
+ * The face lives in the UI, and `color` is the same hex so the file matches.
  */
-export async function createUntitledBot(taken: Set<string>): Promise<string> {
-  let name = "untitled";
-  for (let n = 2; taken.has(name); n++) name = `untitled-${n}`;
+export async function createNamedBot(displayName: string, taken: Set<string>, color: string): Promise<string> {
+  const base = slugify(displayName) || "bot";
+  let name = base;
+  for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+  const label = displayName.trim() || prettyBotName(name);
   return saveBot(
     {
       name,
       description: "Ready for a task.",
       mode: "primary",
       model: "",
-      color: "",
-      system: buildBotPersona(name, "whatever the user needs next - learn the job from their first task"),
+      color,
+      system: buildBotPersona(label, "whatever the user needs next - learn the job from their first task"),
       disabled: false,
       skills: [],
       mcp: {},
@@ -864,7 +866,11 @@ export async function listSkills(): Promise<SkillInfo[]> {
       // are for developing OpenCode or this app - not for the user's bots -
       // so keep them out of the catalog, the default activation set and the
       // marketplace's "installed" view.
-      return r.data.filter((s) => !s.path.startsWith("/builtin/"));
+      return r.data.filter((s) => {
+        if (s.path.startsWith("/builtin/")) return false;
+        const id = s.id.toLowerCase();
+        return id !== "opencode" && id !== "report" && !id.endsWith("/opencode") && !id.endsWith("/report");
+      });
     } catch {
       return [];
     }
@@ -892,6 +898,82 @@ function mcpLoc(): { directory: string } | undefined {
 
 export async function connectMcpServer(name: string): Promise<void> {
   await client.mcp.connect({ server: name, location: mcpLoc() });
+}
+
+export type McpSignIn = {
+  url: string;
+  attemptID: string;
+  instructions: string;
+  mode: "auto" | "code";
+};
+
+/** A blank tab opened during the click, so the browser still allows the redirect. */
+export type SignInTab = {
+  go: (url: string) => void;
+  close: () => void;
+};
+
+export function holdSignInTab(): SignInTab {
+  const popup = window.open("about:blank", "_blank");
+  return {
+    go(url: string) {
+      if (!popup || popup.closed) {
+        throw new Error("The browser blocked the sign-in window. Allow pop-ups for this site, then try Sign in again.");
+      }
+      popup.location.href = url;
+    },
+    close() {
+      if (popup && !popup.closed) popup.close();
+    },
+  };
+}
+
+/** Start the harness OAuth attempt and return the page the person must open. */
+export async function beginMcpSignIn(integrationID: string): Promise<McpSignIn> {
+  const location = mcpLoc();
+  const info = await client.integration.get({ integrationID, location });
+  const method = info.data.methods.find((m) => m.type === "oauth");
+  if (!method || method.type !== "oauth") {
+    throw new Error("This app has no browser sign-in.");
+  }
+  const started = await client.integration.oauth.connect({
+    integrationID,
+    methodID: method.id,
+    location,
+  });
+  return {
+    url: started.data.url,
+    attemptID: started.data.attemptID,
+    instructions: started.data.instructions,
+    mode: started.data.mode,
+  };
+}
+
+/** Wait until the browser sign-in finishes, fails, or times out. */
+export async function waitForMcpSignIn(integrationID: string, attemptID: string): Promise<void> {
+  const location = mcpLoc();
+  const deadline = Date.now() + 5 * 60 * 1000;
+  for (;;) {
+    const res = await client.integration.oauth.status({ integrationID, attemptID, location });
+    const st = res.data;
+    if (st.status === "complete") return;
+    if (st.status === "failed") throw new Error(st.message || "Sign-in failed.");
+    if (st.status === "expired") throw new Error("Sign-in expired. Try Sign in again.");
+    if (Date.now() > deadline) throw new Error("Sign-in timed out. Try Sign in again.");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+
+/** Finish a sign-in that asks the person to paste a code. */
+export async function completeMcpSignIn(integrationID: string, attemptID: string, code: string): Promise<void> {
+  const trimmed = code.trim();
+  if (!trimmed) throw new Error("Paste the code from the sign-in page.");
+  await client.integration.oauth.complete({
+    integrationID,
+    attemptID,
+    code: trimmed,
+    location: mcpLoc(),
+  });
 }
 
 export async function disconnectMcpServer(name: string): Promise<void> {

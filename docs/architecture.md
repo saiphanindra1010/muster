@@ -96,7 +96,7 @@ token, and no engine logic.
 | Disabled section | `file.list` on `.opencode/agents` minus the visible agents |
 | Bot chat | `POST /api/session` (agent + `metadata: {kind: dm, bot}`), then prompts |
 | Streaming + status | `GET /api/event` SSE (fetch + reader, auto-reconnect) |
-| Model picker | `GET /api/model` + `session.get` (per-chat) + `session.switchModel` |
+| Model routing | `GET /api/model`, then `session.switchModel` per message from the task |
 | Stop | `session.interrupt` |
 | Permission prompt | `permission.list` + Allow / Always / Deny (`permission.reply`) |
 | Bot files | `file.read` / `file.write` / `file.list` under `<workspace>/.opencode/agents/` |

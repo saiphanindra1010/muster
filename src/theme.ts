@@ -1,10 +1,14 @@
 /**
- * Appearance follows the system - Muster has no in-app theme override.
+ * Appearance: System (default), Light, or Dark.
  *
- * The decision lands on <html data-theme="dark|light">; every token in
- * styles.css has a light twin. index.html runs the same resolution before
- * first paint (no flash of the wrong theme), this module owns it after that.
+ * The choice is `localStorage["muster.appearance"]`. It is applied in
+ * index.html before first paint, then owned here. System follows the OS
+ * and repaints when the OS flips.
  */
+
+export type Appearance = "system" | "light" | "dark";
+
+const STORAGE_KEY = "muster.appearance";
 
 function systemPrefersDark(): boolean {
   try {
@@ -14,22 +18,45 @@ function systemPrefersDark(): boolean {
   }
 }
 
-/** Resolve the OS appearance and paint it on <html>. */
-export function applyAppearance(): void {
+export function readAppearance(): Appearance {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    if (v === "light" || v === "dark" || v === "system") return v;
+  } catch {}
+  return "system";
+}
+
+export function resolveTheme(choice: Appearance = readAppearance()): "light" | "dark" {
+  if (choice === "light" || choice === "dark") return choice;
+  return systemPrefersDark() ? "dark" : "light";
+}
+
+/** Paint `<html data-theme>`. Crossfades when the resolved theme actually changes. */
+export function applyAppearance(choice: Appearance = readAppearance()): void {
   const el = document.documentElement;
-  const next = systemPrefersDark() ? "dark" : "light";
-  if (el.dataset.theme && el.dataset.theme !== next) {
-    // Crossfade surfaces for a beat so the switch doesn't snap.
+  const next = resolveTheme(choice);
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (el.dataset.theme && el.dataset.theme !== next && !reduced) {
     el.classList.add("theme-anim");
     window.setTimeout(() => el.classList.remove("theme-anim"), 260);
   }
   el.dataset.theme = next;
 }
 
-/** Repaint when the OS appearance changes. Returns the cleanup function. */
+/** Persist a choice and paint it. */
+export function setAppearance(choice: Appearance): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, choice);
+  } catch {}
+  applyAppearance(choice);
+}
+
+/** Repaint when the OS appearance changes and the choice is System. */
 export function watchSystemAppearance(): () => void {
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  const onChange = () => applyAppearance();
+  const onChange = () => {
+    if (readAppearance() === "system") applyAppearance("system");
+  };
   mq.addEventListener("change", onChange);
   return () => mq.removeEventListener("change", onChange);
 }

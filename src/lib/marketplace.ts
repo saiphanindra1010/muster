@@ -136,6 +136,7 @@ export async function configView(): Promise<ConfigView> {
 export interface McpStatus {
   status: string;
   error?: string;
+  integrationID?: string;
 }
 export interface PluginStatus {
   status: string;
@@ -166,7 +167,11 @@ export async function loadMarket(): Promise<{ cfg: ConfigView; state: MarketStat
   const mcp = new Map<string, McpStatus>();
   for (const s of mcpList) {
     const status = s.status;
-    mcp.set(s.name, { status: status.status, error: "error" in status ? status.error : undefined });
+    mcp.set(s.name, {
+      status: status.status,
+      error: "error" in status ? status.error : undefined,
+      integrationID: s.integrationID,
+    });
   }
   const pmap = new Map<string, PluginStatus>();
   for (const p of plugins) {
@@ -249,8 +254,18 @@ export async function uninstallSkill(id: string): Promise<void> {
 
 /* ------------------------------- entry points ------------------------------ */
 
+/** Browser connectors share one Chrome. Installing one removes the others. */
+function isBrowserConnector(item: MarketItem): boolean {
+  return item.kind === "mcp" && (item.tags ?? []).includes("browser");
+}
+
 export async function installItem(item: MarketItem, values?: Record<string, string>): Promise<void> {
   if (item.kind === "mcp") {
+    if (isBrowserConnector(item)) {
+      for (const other of catalog()) {
+        if (other.id !== item.id && isBrowserConnector(other)) await uninstallMcpServer(other.id);
+      }
+    }
     const conf = JSON.parse(JSON.stringify(item.mcp?.config ?? {})) as Record<string, unknown>;
     for (const [i, f] of (item.mcp?.fields ?? []).entries()) {
       const value = (values?.[String(i)] ?? "").trim();

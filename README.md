@@ -182,12 +182,12 @@ The catalog lives in `src/marketplace.json` (ids, npm refs, commands, help).
 
 ## 7. Bots (custom agents with skills + MCP)
 
-Sidebar ＋ (or the field on the home screen) - just say what the bot should
-do, one click to create and start chatting. No name form: the name is derived
-from your words ("help me plan trips" → `plan-trips`) and stored; click the
-bot's name in the chat header (or edit it in settings) to rename it later -
-its chat history follows the rename. An empty prompt creates a general-purpose
-`helper`. A bot is stored as
+Sidebar **New bot** opens a dialog. Type a name, pick a face and a color,
+then **Create**. Nothing is saved before that, and Create stays off while the
+name is empty. The name you type is the label; the file name is the slug
+(`Code Reviewer` → `code-reviewer`). Click the bot's name in the chat header
+(or edit it in settings) to rename it later - its chat history follows the
+rename. A bot is stored as
 `<workspace>/.opencode/agents/<name>.md` (frontmatter + system prompt body):
 
 - **Skills**: checkbox list from the harness skill catalog. Default = all skills
@@ -270,7 +270,7 @@ Bots behave like background colleagues, not request/response toys:
 | Disabled section | `file.list` on `.opencode/agents` minus the visible agents |
 | Bot chat | `POST /api/session` (agent + `metadata: {kind: dm, bot}`), `POST /prompt` |
 | Streaming + status | `GET /api/event` SSE (fetch + reader, auto-reconnect) |
-| Model picker | `GET /api/model` + `session.get` (per-chat) + `session.switchModel` |
+| Model routing | `GET /api/model`, then `session.switchModel` per message from the task |
 | Stop | `session.interrupt` |
 | Permission prompt | `permission.list` + Allow / Always / Deny (`permission.reply`) |
 | Bot files | `file.read` / `file.write` / `file.list` under `<workspace>/.opencode/agents/`, applied via `location.reload` |

@@ -4,9 +4,9 @@
 
 - **Bots are colleagues.** Copy, roster and statuses treat bots as coworkers,
   not tools. Nothing user-visible mentions the engine, terminals or CLIs.
-- **Calm surfaces, honest signals.** OS light and dark twins; color is
-  reserved for meaning (working, waiting, unread, danger), and the brand
-  violet is for actions, selection, and focus.
+- **Calm surfaces, honest signals.** Light and dark twins; color is
+  reserved for meaning (working, waiting, danger). Actions, selection, and
+  focus use black and white, not a brand hue.
 - **No emojis.** Iconography is Lucide only, through the size-first wrappers
   in `src/icons.tsx`.
 - **Dumb UI.** The UI renders what the harness reports; it never simulates
@@ -14,16 +14,15 @@
 
 ## Appearance & theming
 
-Muster follows the OS appearance. There is no in-app Light / Dark / System
-setting: the desktop owns that choice, and an app-level override would make
-people keep two settings in sync.
+Appearance is System, Light, or Dark. System is the default and follows the
+OS. The choice is `localStorage["muster.appearance"]`.
 
-- `index.html` resolves `prefers-color-scheme` before first paint (no flash of
-  the wrong theme).
+- `index.html` reads that key before first paint (no flash of the wrong theme).
 - `src/theme.ts` owns it after that: `applyAppearance()` paints
   `<html data-theme="dark|light">` and crossfades for 260 ms via the
   `theme-anim` class (skipped under `prefers-reduced-motion`).
-- `watchSystemAppearance()` repaints when the OS flips while the app is open.
+- `watchSystemAppearance()` repaints when the OS flips and the choice is System.
+- The sidebar control calls `setAppearance()`.
 
 Every color is a semantic token in `src/styles.css`; the light twin restates
 the same roles under `:root[data-theme="light"]`. Your chat bubble is a
@@ -47,38 +46,30 @@ primary actions, selection, and focus. The two hardest text pairs:
 | `--glass-bg`, `--glass-bg-strong`, `--glass-line`, `--glass-sheen`, `--glass-highlight` | Liquid Glass material |
 | `--shadow-soft`, `--shadow-composer`, `--shadow-modal` | depth |
 
-## Liquid Glass
+## Surfaces
 
-The shell is one frosted material; content is not.
+The shell is opaque. Sidebar, top bar, composer, modal, and drawer do not use
+backdrop blur, so scrolling and theme switches stay smooth.
 
-- **Glass:** sidebar, topbar, composer, modal, drawer, and the blurred modal
-  veils.
-- **Opaque:** message bubbles, markdown cards, tables, code blocks, the thread
-  background, roster rows, permission cards. Text sits on stable surfaces.
-- A glass surface is a translucent tint plus
-  `backdrop-filter: blur(30px) saturate(150%)`, a 1 px inner top highlight,
-  and a hairline edge. `--glass-bg` is the regular material for the topbar and
-  composer; `--glass-bg-strong` is used where sustained reading matters
-  (sidebar, modal, drawer).
-- No glass on glass. Controls inside a glass surface use a solid `--fill`, not
-  another blur.
-- The violet/blue ambient wash behind the shell is what the material
-  refracts. It stays subtle; content never depends on it for contrast.
+- Message bubbles, markdown, tables, and code sit on the same stable surfaces.
+- Controls inside a surface use `--fill`, not another layer.
+- A faint ambient wash sits behind the shell. Content never depends on it
+  for contrast.
 
 Fallbacks:
 
 - `prefers-reduced-transparency: reduce` and webviews without
   `backdrop-filter` get fully opaque sidebar, toolbar, composer, modal, and
   drawer surfaces.
-- `prefers-contrast: more` strengthens text, edges, and the bubble surface,
-  and makes the glass nearly opaque.
+- `prefers-contrast: more` strengthens text, edges, and the bubble surface.
 - `prefers-reduced-motion: reduce` disables the theme crossfade, message entry,
   and status pulses.
 
 ## Chat anatomy
 
-- **Header**: bot avatar, name (click to open its settings), and the model
-  picker. Renaming happens in the bot settings drawer.
+- **Header**: bot avatar and name (click to open its settings). The model is
+  chosen per message from the task, and there is no model picker. Renaming
+  happens in the bot settings drawer.
 - **Thread**: oldest-first. Your messages sit in the neutral bubble on the
   right; bot text renders as sanitized GFM (`marked` + `DOMPurify`) and links
   open outside the app. Reasoning parts are intentionally hidden - the UI
@@ -109,17 +100,21 @@ at.
 
 ## Bot identity
 
-Avatars are DiceBear **Thumbs** characters on a dark tinted tile, seeded by
-bot id - same bot, same face everywhere. A bot's `color` frontmatter overrides
-the per-bot glow tint. They render as isolated data-URI `<img>`s on purpose
-(each DiceBear SVG defines the same `mask id`, which would bleed between
-inline copies).
+The app mark is the four pastel crew dots (`IconMark`, `src/icons.tsx`), used
+for the sidebar brand, hero, and favicon. A bot is a face: one of twelve
+shapes in a chosen color (`src/avatar.tsx`). The face bobs, blinks, and
+glances, and stays still when the system asks for reduced motion. The choice
+is saved in `localStorage["muster.faces.v1"]`. A bot with no saved face gets
+a stable one from its id.
+
+New bots are not created on click. **New bot** opens a dialog that asks for
+a name and a face. **Create** stays off until the name is filled in.
 
 ## Modals & drawers
 
 - Bot settings renders as a right-side drawer; Tools and Marketplace as
-  centered modals. All share the Liquid Glass material, veil, and shadow
-  tokens, and close on Escape (`src/lib/useEscape.ts`).
+  centered modals. All use the opaque surface tokens and close on Escape
+  (`src/lib/useEscape.ts`).
 - Focus is visible everywhere: a 2 px `--accent-ring` outline with offset;
   inputs and checkboxes show a soft ring instead.
 
