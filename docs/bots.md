@@ -27,7 +27,7 @@ You are one of the user's bots - a colleague, not an assistant...
 | `description` | one-liner shown in listings; new bots get the creation prompt (capped at 120 chars) |
 | `mode` | `primary` \| `subagent` \| `all`; the app creates `primary` |
 | `model` | optional per-bot model override |
-| `color` | optional hex; overrides the pastel avatar backdrop |
+| `color` | optional hex; sets the bot's face color (written by the create dialog) |
 | `skills` | explicit skill ids; **empty means "all skills"** (see below) |
 | `disabled` | `true` removes the agent from the harness listing; sidebar shows it under "Disabled" |
 | `permissions` | rule list; the MCP picker generates `<server>_*` rules with resource `*` |
@@ -47,10 +47,10 @@ markers so migrations stay idempotent.
 
 ## Lifecycle
 
-- **Create**: type what the bot should do ("help me plan trips") in the
-  sidebar ＋; the name is derived from the words (`plan-trips`), de-duplicated
-  against existing bots, and an empty prompt creates a general-purpose
-  `helper`.
+- **Create**: **New bot** opens a dialog. Type a name, pick a face and color,
+  then **Create** (disabled while the name is empty). The label is kept as
+  typed; the file name is its slug (`Code Reviewer` → `code-reviewer`),
+  de-duplicated against existing bots. Nothing is written before Create.
 - **Rename**: from the chat header or settings; the DM session's title and
   metadata are updated so history follows (`renameBotHistory`).
 - **Disable / Enable**: `disabled: true` in the file; disabled bots disappear
@@ -93,7 +93,7 @@ skill bodies in `src/marketplace-skills/<id>/SKILL.md`. Three kinds:
   Sentry, Gmail, Google Chat) install with one click and sign in from the
   card's **Sign in** button. Google connectors use a one-time Google Cloud
   OAuth client from `.env` (`GOOGLE_MCP_CLIENT_ID` /
-  `GOOGLE_MCP_CLIENT_SECRET`); README section 6 has the walkthrough.
+  `GOOGLE_MCP_CLIENT_SECRET`); see the walkthrough below.
 - **Plugins (npm)**: `plugins: [...]`; the harness installs in the
   background (~40-60 s) and the modal polls until active.
 - **Skills**: `.opencode/skills/<id>/SKILL.md`.
@@ -104,6 +104,22 @@ connectors (Playwright, Chrome DevTools, Agent Browser) are
 install-one-at-a-time by design; the Agent Browser entry is pinned to a
 verified version, runs headed, and keeps logins in a persistent profile at
 `~/.muster-bots/browser-profile`.
+
+### Google OAuth client (Gmail, Google Chat)
+
+Google does not let clients register automatically, so these two connectors
+need a one-time Cloud project:
+
+1. Create an OAuth client of type **Web application** and turn on **Use this
+   client for an AI-powered agent**.
+2. Add `http://127.0.0.1:19876/callback` and
+   `http://127.0.0.1:19877/callback` as redirect URIs.
+3. Enable the Gmail API, Gmail MCP API, Chat API and Chat MCP API.
+4. Put the client ID and secret in `.env` as `GOOGLE_MCP_CLIENT_ID` and
+   `GOOGLE_MCP_CLIENT_SECRET`, then restart the app.
+
+After that, install and **Sign in** are single clicks. Sign-ins last about an
+hour (offline access is not requested yet); click **Sign in** again to renew.
 
 ## The team view
 
