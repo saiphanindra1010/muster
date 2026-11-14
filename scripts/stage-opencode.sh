@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Copy the local `opencode` binary into the Tauri sidecar path.
-# The file is gitignored (~200MB). Run this on each OS before `tauri build`.
+# Stage the real OpenCode harness binary at the Tauri sidecar path.
+# The file is gitignored (~250MB). Run this on each OS before `tauri build`.
+#
+# `command -v opencode` is not enough: on Windows the global install is a small
+# shim, while the real binary lives in the installed @opencode/cli package.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
-command -v opencode >/dev/null || { echo "opencode is not on PATH" >&2; exit 1; }
 
 if command -v rustc >/dev/null; then
   triple="$(rustc -vV | sed -n 's/^host: //p')"
@@ -20,11 +21,54 @@ else
   esac
 fi
 
-mkdir -p src-tauri/binaries
-dest="src-tauri/binaries/opencode-${triple}"
 case "$triple" in
-  *windows*) dest="${dest}.exe" ;;
+  *windows*) os=windows; exe=.exe ;;
+  *apple-darwin*) os=darwin; exe= ;;
+  *linux*) os=linux; exe= ;;
+  *) echo "Unsupported target: $triple" >&2; exit 1 ;;
 esac
-cp "$(command -v opencode)" "$dest"
+case "$triple" in
+  x86_64*) arch=x64 ;;
+  aarch64*|arm64*) arch=arm64 ;;
+  *) echo "Unsupported architecture: $triple" >&2; exit 1 ;;
+esac
+
+# The postinstall step replaces @opencode/cli/bin/opencode.exe with the real
+# platform binary. The platform package keeps the same file. Prefer those over
+# the global launcher, which is a small shim on Windows.
+global="${BUN_INSTALL:-$HOME/.bun}/install/global/node_modules"
+candidates=(
+  "$global/@opencode/cli/bin/opencode.exe"
+  "$global/@opencode/cli/bin/opencode"
+  "$global/@opencode/cli-${os}-${arch}/bin/opencode${exe}"
+  "$global/@opencode/cli-${os}-${arch}-baseline/bin/opencode${exe}"
+)
+
+src=""
+for cand in "${candidates[@]}"; do
+  [ -f "$cand" ] || continue
+  size="$(wc -c < "$cand" | tr -d ' ')"
+  if [ "$size" -gt 50000000 ]; then src="$cand"; break; fi
+done
+
+# Local installs may only have opencode on PATH (e.g. ~/.opencode/bin).
+if [ -z "$src" ]; then
+  fallback="$(command -v opencode || true)"
+  if [ -n "$fallback" ]; then
+    resolved="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$fallback" 2>/dev/null || echo "$fallback")"
+    size="$(wc -c < "$resolved" | tr -d ' ')"
+    if [ "$size" -gt 50000000 ]; then src="$resolved"; fi
+  fi
+fi
+
+if [ -z "$src" ]; then
+  echo "Could not find the real OpenCode binary (looked in $global and on PATH)." >&2
+  echo "Install it with: bun install -g --trust \"@opencode/cli@<version>\"" >&2
+  exit 1
+fi
+
+mkdir -p src-tauri/binaries
+dest="src-tauri/binaries/opencode-${triple}${exe}"
+cp "$src" "$dest"
 chmod +x "$dest"
-echo "staged $dest"
+echo "staged $dest from $src ($(wc -c < "$dest" | tr -d ' ') bytes)"

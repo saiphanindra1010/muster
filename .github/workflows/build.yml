@@ -30,7 +30,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          # macos-14 was retired on 2 Nov 2026; jobs on it are cancelled at
+          # queue time. macos-15 is the current stable arm64 image.
+          - os: macos-15
             label: macos-arm64
             bundle_glob: src-tauri/target/release/bundle/dmg/*.dmg
           - os: windows-latest
@@ -94,6 +96,20 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           bash scripts/stage-opencode.sh
 
+      # Guard against shipping the tiny global launcher instead of the real
+      # ~250MB harness binary (the Windows installer was 2.6MB without this).
+      - name: Verify the sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="$(ls src-tauri/binaries/opencode-* | head -n 1)"
+          size="$(wc -c < "$file" | tr -d ' ')"
+          echo "$file is $size bytes"
+          if [ "$size" -lt 50000000 ]; then
+            echo "::error::staged sidecar is only $size bytes - the real harness binary was not copied"
+            exit 1
+          fi
+
       # Each OS picks up its own src-tauri/tauri.<os>.conf.json automatically
       # (dmg on macOS, nsis on Windows, deb on Linux).
       - name: Build the installer
@@ -109,7 +125,9 @@ jobs:
 
   release:
     name: Draft release
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Run after every tag build, even if one platform failed, so the
+    # installers that did build are still attached for review.
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     permissions:
